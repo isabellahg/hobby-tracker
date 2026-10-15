@@ -37,13 +37,13 @@ export function RoutineListScreen() {
         <EmptyState>No routines yet. A routine is a reusable, ordered task list.</EmptyState>
       )}
 
-      <div className="stack">
+      <div className="stack stack-sm">
         {routines.map((r) => (
-          <div key={r.id} className="card stack">
-            <div className="page-header" style={{ marginBottom: 0 }}>
+          <div key={r.id} className="card stack stack-sm">
+            <div className="page-header">
               <div>
-                <h3 style={{ margin: 0 }}>{r.name}</h3>
-                <div className="muted" style={{ fontSize: '0.85rem' }}>
+                <h3>{r.name}</h3>
+                <div className="muted small">
                   {r.taskRefs.length} task(s)
                   {r.hobbyIds.length > 0 &&
                     ` · ${r.hobbyIds.map((id) => hobbyById.get(id)?.name).filter(Boolean).join(', ')}`}
@@ -64,7 +64,7 @@ export function RoutineListScreen() {
                 </button>
               </div>
             </div>
-            {r.description && <p className="muted" style={{ margin: 0 }}>{r.description}</p>}
+            {r.description && <p className="desc m0">{r.description}</p>}
           </div>
         ))}
       </div>

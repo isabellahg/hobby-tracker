@@ -25,7 +25,7 @@ function App() {
 
   if (!loaded) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+      <div className="center-screen">
         Loading…
       </div>
     )

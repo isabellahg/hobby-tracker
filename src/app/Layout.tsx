@@ -1,32 +1,135 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { useAppStore } from '../state/store'
+import { computeWeekStreak } from '../domain/logic/weekStreak'
 
-const NAV_ITEMS: { to: string; label: string }[] = [
-  { to: '/', label: 'Home' },
-  { to: '/hobbies', label: 'Hobbies & Skills' },
-  { to: '/tasks', label: 'Task Library' },
-  { to: '/routines', label: 'Routines' },
-  { to: '/plan', label: 'Weekly Plan' },
-  { to: '/history', label: 'History' },
-  { to: '/progress', label: 'Progress' },
-  { to: '/data', label: 'Data' },
-  { to: '/import', label: 'LLM Import' },
-  { to: '/settings', label: 'Settings' },
+interface NavItem {
+  to: string
+  label: string
+}
+
+/** Grouped like folders in a file tree. */
+const NAV_GROUPS: { name: string; items: NavItem[] }[] = [
+  {
+    name: 'plan',
+    items: [
+      { to: '/', label: 'Home' },
+      { to: '/routines', label: 'Routines' },
+      { to: '/plan', label: 'Weekly Plan' },
+    ],
+  },
+  {
+    name: 'library',
+    items: [
+      { to: '/hobbies', label: 'Hobbies & Skills' },
+      { to: '/tasks', label: 'Task Library' },
+    ],
+  },
+  {
+    name: 'review',
+    items: [
+      { to: '/history', label: 'History' },
+      { to: '/progress', label: 'Progress' },
+    ],
+  },
+  {
+    name: 'system',
+    items: [
+      { to: '/data', label: 'Data' },
+      { to: '/import', label: 'LLM Import' },
+      { to: '/settings', label: 'Settings' },
+    ],
+  },
 ]
 
+function breadcrumb(pathname: string): string[] {
+  if (pathname.startsWith('/session/')) return ['session', 'Session']
+  if (pathname.startsWith('/routines/')) return ['plan', 'Routines', pathname.endsWith('/new') ? 'New' : 'Edit']
+  for (const group of NAV_GROUPS) {
+    const item = group.items.find((i) => i.to === pathname)
+    if (item) return [group.name, item.label]
+  }
+  return []
+}
+
+function StatusBar() {
+  const sessions = useAppStore((s) => s.sessions)
+  const taskDefs = useAppStore((s) => s.taskDefs)
+  const [now] = useState(() => new Date())
+  const streak = useMemo(() => computeWeekStreak(sessions, now), [sessions, now])
+  const running = sessions.find((s) => s.state === 'in_progress')
+  const openTasks = taskDefs.filter((t) => !t.archived).length
+  const finished = sessions.filter((s) => s.state === 'finished').length
+
+  return (
+    <footer className="status-bar">
+      {running && (
+        <Link to={`/session/${running.id}`} className="row">
+          <span className="dot dot-violet" /> session running
+        </Link>
+      )}
+      <span>streak {streak.currentStreak} wk</span>
+      <span>best {streak.longestStreak} wk</span>
+      <span>{streak.weekActiveDays}/7 active this week</span>
+      <span>{openTasks} open tasks</span>
+      <span>{finished} sessions</span>
+      <span>local-only</span>
+    </footer>
+  )
+}
+
 export function Layout() {
+  const { pathname } = useLocation()
+  const crumbs = breadcrumb(pathname)
+  // Only matters on narrow screens, where the nav is a slide-out drawer.
+  const [navOpen, setNavOpen] = useState(false)
+
   return (
     <div className="app-shell">
-      <nav className="app-nav">
-        <h1>Hobby Tracker</h1>
-        {NAV_ITEMS.map((item) => (
-          <NavLink key={item.to} to={item.to} end={item.to === '/'}>
-            {item.label}
-          </NavLink>
+      {navOpen && <div className="nav-backdrop" onClick={() => setNavOpen(false)} />}
+      <nav
+        className={navOpen ? 'app-nav is-open' : 'app-nav'}
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest('a')) setNavOpen(false)
+        }}
+      >
+        <p className="app-nav-title">Hobby Tracker</p>
+        {NAV_GROUPS.map((group) => (
+          <details key={group.name} className="nav-group" open>
+            <summary>{group.name}</summary>
+            {group.items.map((item) => (
+              <NavLink key={item.to} to={item.to} end={item.to === '/'}>
+                {item.label}
+              </NavLink>
+            ))}
+          </details>
         ))}
       </nav>
-      <main className="app-main">
-        <Outlet />
-      </main>
+      <div className="app-content">
+        <div className="app-topbar">
+          <button
+            type="button"
+            className="icon-btn nav-toggle"
+            aria-label={navOpen ? 'Close navigation' : 'Open navigation'}
+            aria-expanded={navOpen}
+            onClick={() => setNavOpen((o) => !o)}
+          >
+            ☰
+          </button>
+          <span className="crumb-root">Hobby Tracker</span>
+          {crumbs.map((c, i) => (
+            <span key={c} className={i === crumbs.length - 1 ? 'crumb-current' : undefined}>
+              / {c}
+            </span>
+          ))}
+        </div>
+        <main className="app-main">
+          <div className="app-main-inner">
+            <Outlet />
+          </div>
+        </main>
+      </div>
+      <StatusBar />
     </div>
   )
 }

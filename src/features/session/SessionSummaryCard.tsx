@@ -44,10 +44,10 @@ export function SessionSummaryCard({ session }: { session: Session }) {
   return (
     <div className="stack">
       <div>
-        <div className="muted" style={{ fontSize: '0.85rem' }}>
+        <div className="page-subtitle">
           Session complete
         </div>
-        <h2 style={{ margin: 0 }}>
+        <h2>
           <InlineEdit
             value={sessionTitle(session, routines)}
             ariaLabel="Session name"
@@ -56,23 +56,23 @@ export function SessionSummaryCard({ session }: { session: Session }) {
         </h2>
       </div>
 
-      <div className="card stack">
-        <div className="row" style={{ justifyContent: 'space-between' }}>
+      <div className="card">
+        <div className="stat-row">
           <div>
-            <div className="muted">Tasks completed</div>
-            <div style={{ fontSize: '1.4rem' }}>
+            <div className="stat-label">Tasks completed</div>
+            <div className="stat-value">
               {completed.length}/{session.taskEntries.length}
             </div>
           </div>
           {session.durationSec !== undefined && (
             <div>
-              <div className="muted">Time invested</div>
-              <div style={{ fontSize: '1.4rem' }}>{formatDuration(session.durationSec)}</div>
+              <div className="stat-label">Time invested</div>
+              <div className="stat-value">{formatDuration(session.durationSec)}</div>
             </div>
           )}
           <div>
-            <div className="muted">Activity</div>
-            <div style={{ fontSize: '1.4rem' }}>{markIsNew ? 'Mark earned 🎉' : 'Already marked today'}</div>
+            <div className="stat-label">Activity</div>
+            <div className="stat-value">{markIsNew ? 'Mark earned 🎉' : 'Already marked today'}</div>
           </div>
         </div>
       </div>
@@ -80,7 +80,7 @@ export function SessionSummaryCard({ session }: { session: Session }) {
       {achievedRecords.length > 0 && (
         <div className="card">
           <h3>Achievements</h3>
-          <ul>
+          <ul className="list-bullets">
             {achievedRecords.map((r) => (
               <li key={r.id}>{r.description}</li>
             ))}
@@ -91,12 +91,12 @@ export function SessionSummaryCard({ session }: { session: Session }) {
       {(hobbyNames.length > 0 || skillNames.length > 0) && (
         <div className="card">
           <h3>Practiced</h3>
-          <div className="row" style={{ flexWrap: 'wrap' }}>
+          <div className="row wrap">
             {hobbyNames.map((n) => (
-              <Chip key={`h-${n}`}>{n}</Chip>
+              <Chip key={`h-${n}`} tone="hobby">{n}</Chip>
             ))}
             {skillNames.map((n) => (
-              <Chip key={`s-${n}`}>{n}</Chip>
+              <Chip key={`s-${n}`} tone="skill">{n}</Chip>
             ))}
           </div>
         </div>
@@ -105,7 +105,7 @@ export function SessionSummaryCard({ session }: { session: Session }) {
       {completed.length > 0 && (
         <div className="card">
           <h3>Completed</h3>
-          <ul>
+          <ul className="list-bullets">
             {completed.map((e) => (
               <li key={e.id}>{e.label}</li>
             ))}
@@ -116,7 +116,7 @@ export function SessionSummaryCard({ session }: { session: Session }) {
       {unfinished.length > 0 && (
         <div className="card">
           <h3>Unfinished</h3>
-          <ul>
+          <ul className="list-bullets">
             {unfinished.map((e) => (
               <li key={e.id}>{e.label}</li>
             ))}
@@ -127,7 +127,7 @@ export function SessionSummaryCard({ session }: { session: Session }) {
 
       {ongoingTasks.length > 0 && (
         <div className="card stack">
-          <h3 style={{ margin: 0 }}>Ongoing</h3>
+          <h3 className="m0">Ongoing</h3>
           {ongoingTasks.map((task) => {
             const count = countSessionsForTask(allSessions, task.id)
             return (
@@ -136,7 +136,7 @@ export function SessionSummaryCard({ session }: { session: Session }) {
                 <span className="muted">
                   · {count} session{count === 1 ? '' : 's'}
                 </span>
-                <div className="row" style={{ fontSize: '0.9rem' }}>
+                <div className="row small">
                   <span className="muted">Next:</span>
                   <InlineEdit
                     value={task.nextAction ?? ''}

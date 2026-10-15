@@ -8,8 +8,8 @@ import { kindLabel as kindName } from '../../components/taskKinds'
 import { TaskEditor } from '../../components/TaskEditor'
 import { InlineEdit } from '../../components/InlineEdit'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
-import { EmptyState } from '../../components/EmptyState'
 import { Chip } from '../../components/Chip'
+import { Panel } from '../../components/Panel'
 import type { PlanBucket } from '../../domain/types/planBucket'
 import type { TaskDef, TaskKind } from '../../domain/types/taskDef'
 
@@ -151,10 +151,14 @@ export function PlanningBoard() {
       <>
         <Chip>{kindLabel(task.kind)}</Chip>
         {task.hobbyIds.map((id) => (
-          <Chip key={id}>{hobbyById.get(id)?.name ?? '?'}</Chip>
+          <Chip key={id} tone="hobby">
+            {hobbyById.get(id)?.name ?? '?'}
+          </Chip>
         ))}
         {task.skillIds.map((id) => (
-          <Chip key={id}>{skillById.get(id)?.name ?? '?'}</Chip>
+          <Chip key={id} tone="skill">
+            {skillById.get(id)?.name ?? '?'}
+          </Chip>
         ))}
       </>
     )
@@ -163,7 +167,7 @@ export function PlanningBoard() {
   function backlogCard(task: TaskDef) {
     if (editingTaskId === task.id) {
       return (
-        <div key={task.id} className="card" style={{ padding: '0.75rem' }}>
+        <div key={task.id} className="card card-tight">
           <TaskEditor task={task} onDone={() => setEditingTaskId(null)} />
         </div>
       )
@@ -174,46 +178,69 @@ export function PlanningBoard() {
         key={task.id}
         draggable
         onDragStart={(e) => startDrag(e, { taskDefId: task.id, sourceBucketId: null })}
-        className="card stack"
-        style={{ padding: '0.5rem 0.75rem', cursor: 'grab', gap: '0.35rem' }}
+        className="card card-tight card-draggable stack stack-sm"
       >
-        <div className="row" style={{ justifyContent: 'space-between' }}>
-          <span>{task.label}</span>
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label={`Edit ${task.label}`}
-            title="Edit"
-            onClick={() => setEditingTaskId(task.id)}
-          >
-            ✎
-          </button>
+        <div className="row row-between">
+          <span className="strong">{task.label}</span>
+          <div className="row">
+            {task.kind === 'ongoing' && (
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label={`Mark ${task.label} finished`}
+                title="Mark finished"
+                onClick={() => setFinishingTask(task)}
+              >
+                ✓
+              </button>
+            )}
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label={`Edit ${task.label}`}
+              title="Edit"
+              onClick={() => setEditingTaskId(task.id)}
+            >
+              ✎
+            </button>
+          </div>
         </div>
-        <div className="row" style={{ flexWrap: 'wrap' }}>
+        <div className="row wrap">
           {tagChips(task)}
           {task.kind === 'ongoing' && (
-            <span className="muted" style={{ fontSize: '0.78rem' }}>
-              {sessionCount} session{sessionCount === 1 ? '' : 's'}
+            <span className="list-row-meta">
+              ×{sessionCount} session{sessionCount === 1 ? '' : 's'}
             </span>
           )}
         </div>
+        {/* Touch screens have no native drag-and-drop, so offer a picker instead. */}
+        {buckets.length > 0 && (
+          <select
+            className="touch-only bucket-picker"
+            aria-label={`Add ${task.label} to a planning session`}
+            value=""
+            onChange={(e) => {
+              if (e.target.value) moveTask({ taskDefId: task.id, sourceBucketId: null }, e.target.value)
+            }}
+          >
+            <option value="">→ add to…</option>
+            {buckets.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+        )}
         {task.kind === 'ongoing' && (
-          <>
-            <div className="row" style={{ fontSize: '0.85rem' }}>
-              <span className="muted">Next:</span>
-              <InlineEdit
-                value={task.nextAction ?? ''}
-                placeholder="set a next action"
-                ariaLabel={`Next action for ${task.label}`}
-                onSave={(nextAction) => run({ operation: 'taskDef.update', payload: { id: task.id, nextAction } })}
-              />
-            </div>
-            <div>
-              <button type="button" className="btn" onClick={() => setFinishingTask(task)}>
-                ✓ Mark finished
-              </button>
-            </div>
-          </>
+          <div className="row small">
+            <span className="muted">next:</span>
+            <InlineEdit
+              value={task.nextAction ?? ''}
+              placeholder="set a next action"
+              ariaLabel={`Next action for ${task.label}`}
+              onSave={(nextAction) => run({ operation: 'taskDef.update', payload: { id: task.id, nextAction } })}
+            />
+          </div>
         )}
       </div>
     )
@@ -224,10 +251,9 @@ export function PlanningBoard() {
       <div
         draggable
         onDragStart={(e) => startDrag(e, { taskDefId: task.id, sourceBucketId: bucket.id })}
-        className="card"
-        style={{ padding: '0.5rem 0.75rem', cursor: 'grab' }}
+        className="card card-tight card-draggable"
       >
-        <div className="row" style={{ justifyContent: 'space-between' }}>
+        <div className="row row-between">
           <span>{task.label}</span>
           <button
             type="button"
@@ -241,29 +267,30 @@ export function PlanningBoard() {
             ×
           </button>
         </div>
-        <div className="row" style={{ marginTop: 4, flexWrap: 'wrap' }}>
-          {tagChips(task)}
-        </div>
+        <div className="row wrap">{tagChips(task)}</div>
       </div>
     )
   }
 
   return (
     <div className="stack">
-      <h2>Plan your next session</h2>
-      <p className="muted" style={{ marginTop: '-0.5rem' }}>
-        Dump anything you want to do into the backlog, drag it into a planning session, then start it
-        whenever you're ready.
-      </p>
+      <div>
+        <div className="page-subtitle">home</div>
+        <h2>Plan your next session</h2>
+        <p className="desc m0">
+          Dump anything into the backlog, drag it into a planning session, then start it whenever you're ready.
+        </p>
+      </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1fr) 2fr', gap: '1rem' }}>
-        <div
-          className="card stack"
+      <div className="two-col">
+        <Panel
+          title="Backlog"
+          icon="☰"
+          count={taskDefs.length}
+          description="Everything you might do. Drag a card onto a planning session."
           onDragOver={(e) => e.preventDefault()}
           onDrop={handleDropOnBacklog}
-          style={{ alignSelf: 'start' }}
         >
-          <h3 style={{ margin: 0 }}>Backlog</h3>
           <div className="field">
             <input
               type="text"
@@ -284,93 +311,90 @@ export function PlanningBoard() {
             onToggleSkill={toggleSkill}
             onChangeKind={setKind}
           />
-          <div>
-            <button type="button" className="btn btn-primary" onClick={addToBacklog}>
-              Add to backlog
-            </button>
-          </div>
+          <button type="button" className="btn btn-primary" onClick={addToBacklog}>
+            + Add to backlog
+          </button>
 
-          <div className="stack" style={{ marginTop: '0.5rem' }}>
-            {taskDefs.length === 0 && <EmptyState>Nothing in the backlog yet.</EmptyState>}
+          <div className="stack stack-sm mt-sm">
+            {taskDefs.length === 0 && <p className="empty-hint">Nothing in the backlog yet.</p>}
             {taskDefs.map((t) => backlogCard(t))}
           </div>
-        </div>
+        </Panel>
 
-        <div className="stack">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem' }}>
-            {buckets.map((bucket) => {
-              const orderedTaskIds = [...bucket.taskRefs].sort((a, b) => a.order - b.order).map((r) => r.taskDefId)
-              const bucketTasks = orderedTaskIds
-                .map((id) => taskDefById.get(id))
-                .filter((t): t is TaskDef => t !== undefined)
-              return (
-                <div
-                  key={bucket.id}
-                  className="card stack"
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => handleDropOnBucket(e, bucket)}
-                  style={{ alignSelf: 'start' }}
-                >
+        <div className="bucket-grid">
+          {buckets.map((bucket) => {
+            const orderedTaskIds = [...bucket.taskRefs].sort((a, b) => a.order - b.order).map((r) => r.taskDefId)
+            const bucketTasks = orderedTaskIds
+              .map((id) => taskDefById.get(id))
+              .filter((t): t is TaskDef => t !== undefined)
+            return (
+              <Panel
+                key={bucket.id}
+                icon="◆"
+                title={
                   <InlineEdit
                     value={bucket.name}
                     ariaLabel="Planning session name"
                     onSave={(name) => run({ operation: 'bucket.rename', payload: { id: bucket.id, name } })}
-                    style={{ fontWeight: 600 }}
+                    className="bold"
                   />
-                  <div className="stack" style={{ minHeight: 40 }}>
-                    {bucketTasks.length === 0 && (
-                      <p className="muted" style={{ fontSize: '0.85rem', margin: 0 }}>
-                        Drag tasks here.
-                      </p>
-                    )}
-                    {bucketTasks.map((task) => (
-                      <div
-                        key={task.id}
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={(e) => handleDropOnBucketTask(e, bucket, task.id)}
-                      >
-                        {bucketCard(task, bucket)}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="row">
+                }
+                count={bucketTasks.length}
+                actions={
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label={`Delete ${bucket.name}`}
+                    title="Delete planning session"
+                    onClick={() => run({ operation: 'bucket.delete', payload: { id: bucket.id } })}
+                  >
+                    ×
+                  </button>
+                }
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => handleDropOnBucket(e, bucket)}
+              >
+                <div className="stack stack-sm drop-zone">
+                  {bucketTasks.length === 0 && <p className="empty-hint">Drag tasks here.</p>}
+                  {bucketTasks.map((task) => (
+                    <div
+                      key={task.id}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => handleDropOnBucketTask(e, bucket, task.id)}
+                    >
+                      {bucketCard(task, bucket)}
+                    </div>
+                  ))}
+                  <div>
                     <button
                       type="button"
                       className="btn btn-primary"
                       disabled={bucketTasks.length === 0}
                       onClick={() => startBucket(bucket.id)}
                     >
-                      Start session
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-danger"
-                      onClick={() => run({ operation: 'bucket.delete', payload: { id: bucket.id } })}
-                    >
-                      Delete
+                      ▶ Start session
                     </button>
                   </div>
                 </div>
-              )
-            })}
+              </Panel>
+            )
+          })}
 
-            <div className="card stack" style={{ alignSelf: 'start' }}>
-              <h3 style={{ margin: 0 }}>+ New planning session</h3>
-              <div className="row">
-                <input
-                  type="text"
-                  aria-label="New planning session name"
-                  placeholder="e.g. Tonight's drawing"
-                  value={newBucketName}
-                  onChange={(e) => setNewBucketName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && createBucket()}
-                />
-                <button type="button" className="btn" onClick={createBucket}>
-                  Create
-                </button>
-              </div>
+          <Panel title="New planning session" icon="+">
+            <div className="row">
+              <input
+                type="text"
+                aria-label="New planning session name"
+                placeholder="e.g. Tonight's drawing"
+                value={newBucketName}
+                onChange={(e) => setNewBucketName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && createBucket()}
+              />
+              <button type="button" className="btn" onClick={createBucket}>
+                Create
+              </button>
             </div>
-          </div>
+          </Panel>
         </div>
       </div>
 

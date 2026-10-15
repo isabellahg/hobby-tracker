@@ -1,9 +1,9 @@
 import type { ChangeLine } from '../domain/operations/diff'
 
-const COLOR_BY_TYPE: Record<ChangeLine['changeType'], string> = {
-  created: 'var(--success)',
-  updated: 'var(--warn)',
-  deleted: 'var(--danger)',
+const DOT_BY_TYPE: Record<ChangeLine['changeType'], string> = {
+  created: 'dot dot-success',
+  updated: 'dot dot-amber',
+  deleted: 'dot dot-danger',
 }
 
 /** Renders a human-readable diff of records a pending operation would change. Shared by the LLM Import screen and the file-import merge/replace preview. */
@@ -12,14 +12,12 @@ export function ChangePreviewList({ lines }: { lines: ChangeLine[] }) {
     return <p className="muted">No changes.</p>
   }
   return (
-    <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+    <ul className="list-plain">
       {lines.map((line, i) => (
-        <li
-          key={`${line.store}-${line.id}-${i}`}
-          style={{ padding: '0.35rem 0', borderBottom: '1px solid var(--border)' }}
-        >
-          <span style={{ color: COLOR_BY_TYPE[line.changeType], marginRight: '0.5rem' }}>●</span>
-          {line.label}
+        <li key={`${line.store}-${line.id}-${i}`} className="list-row">
+          <span className={DOT_BY_TYPE[line.changeType]} />
+          <span className="grow">{line.label}</span>
+          <span className="list-row-meta">{line.changeType}</span>
         </li>
       ))}
     </ul>

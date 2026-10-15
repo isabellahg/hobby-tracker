@@ -46,7 +46,7 @@ export function TaskEditor({ task, onDone }: { task: TaskDef; onDone: () => void
   }
 
   return (
-    <div className="stack" onClick={(e) => e.stopPropagation()}>
+    <div onClick={(e) => e.stopPropagation()}>
       <div className="field">
         <label htmlFor={`task-label-${task.id}`}>Name</label>
         <input
@@ -79,7 +79,7 @@ export function TaskEditor({ task, onDone }: { task: TaskDef; onDone: () => void
           />
         </div>
       )}
-      {error && <p style={{ color: 'var(--danger)', margin: 0 }}>{error}</p>}
+      {error && <p className="error">{error}</p>}
       <div className="row">
         <button type="button" className="btn btn-primary" onClick={save}>
           Save

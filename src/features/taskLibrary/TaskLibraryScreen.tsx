@@ -54,8 +54,11 @@ export function TaskLibraryScreen() {
     <div className="stack">
       <div className="page-header">
         <h2>Task Library</h2>
+        <span className="muted small">
+          {taskDefs.length} open · {archivedTaskDefs.length} archived
+        </span>
       </div>
-      <p className="muted">
+      <p className="desc m0">
         Your backlog. Tasks created here, in a routine, or from Home's quick-add all land in the same place.
       </p>
 
@@ -90,27 +93,27 @@ export function TaskLibraryScreen() {
 
       {taskDefs.length === 0 && <EmptyState>No tasks yet.</EmptyState>}
 
-      <div className="stack">
+      <div className="stack stack-sm">
         {taskDefs.map((task) =>
           editingId === task.id ? (
             <div key={task.id} className="card">
               <TaskEditor task={task} onDone={() => setEditingId(null)} />
             </div>
           ) : (
-            <div key={task.id} className="card row" style={{ justifyContent: 'space-between' }}>
+            <div key={task.id} className="card card-tight row row-between">
               <div>
-                <strong>{task.label}</strong>
-                <div className="row" style={{ marginTop: 4, flexWrap: 'wrap' }}>
+                <span className="strong">{task.label}</span>
+                <div className="row wrap">
                   <Chip>{kindLabel(task.kind)}</Chip>
                   {task.hobbyIds.map((id) => (
-                    <Chip key={id}>{hobbyById.get(id)?.name ?? '?'}</Chip>
+                    <Chip key={id} tone="hobby">{hobbyById.get(id)?.name ?? '?'}</Chip>
                   ))}
                   {task.skillIds.map((id) => (
-                    <Chip key={id}>{skillById.get(id)?.name ?? '?'}</Chip>
+                    <Chip key={id} tone="skill">{skillById.get(id)?.name ?? '?'}</Chip>
                   ))}
                 </div>
                 {task.kind === 'ongoing' && task.nextAction && (
-                  <div className="muted" style={{ fontSize: '0.85rem', marginTop: 4 }}>
+                  <div className="muted small">
                     Next: {task.nextAction}
                   </div>
                 )}

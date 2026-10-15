@@ -22,16 +22,16 @@ export function SettingsScreen() {
       </div>
 
       <div className="card">
-        <h3 style={{ margin: 0 }}>About</h3>
-        <p className="muted">
+        <h3>About</h3>
+        <p className="desc">
           Hobby Tracker — a local-only, LLM-friendly practice tracker. Phase 1 (web). All data lives in
           this browser's IndexedDB; nothing is sent anywhere.
         </p>
       </div>
 
       <div className="card">
-        <h3 style={{ margin: 0 }}>Danger zone</h3>
-        <p className="muted">
+        <h3>Danger zone</h3>
+        <p className="desc">
           Permanently erase every hobby, skill, task, routine, session, and milestone. Export a backup
           first from the Data screen if you want to keep anything.
         </p>

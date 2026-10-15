@@ -74,10 +74,10 @@ export function SessionRunnerScreen() {
     <div className="stack">
       <div className="page-header">
         <div>
-          <div className="muted" style={{ fontSize: '0.85rem' }}>
+          <div className="page-subtitle">
             Session in progress
           </div>
-          <h2 style={{ margin: 0 }}>
+          <h2>
             <InlineEdit
               value={sessionTitle(session, routines)}
               ariaLabel="Session name"
@@ -106,13 +106,9 @@ export function SessionRunnerScreen() {
         onReorder={reorder}
         renderItem={(entry) => (
           <div
-            className="row card"
-            style={{
-              justifyContent: 'space-between',
-              opacity: entry.status === 'skipped' ? 0.5 : 1,
-            }}
+            className={`row row-between card card-tight${entry.status === 'skipped' ? ' is-skipped' : ''}`}
           >
-            <div className="row" style={{ gap: '0.6rem', flex: 1 }}>
+            <div className="row grow">
               <input
                 type="checkbox"
                 aria-label={`Done: ${entry.label}`}
@@ -126,7 +122,7 @@ export function SessionRunnerScreen() {
                 onSave={(label) =>
                   run({ operation: 'session.renameTask', payload: { sessionId: session.id, entryId: entry.id, label } })
                 }
-                style={{ textDecoration: entry.status === 'completed' ? 'line-through' : undefined }}
+                className={entry.status === 'completed' ? 'is-done' : undefined}
               />
               {entry.isAdHoc && <span className="chip">ad-hoc</span>}
             </div>

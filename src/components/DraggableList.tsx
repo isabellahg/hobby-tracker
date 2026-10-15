@@ -29,14 +29,13 @@ export function DraggableList<T extends DraggableItem>({
   }
 
   return (
-    <ul style={{ listStyle: 'none', margin: 0, padding: 0 }} className="stack">
+    <ul className="list-plain stack stack-sm">
       {items.map((item, index) => (
-        <li key={item.id} className="row" style={{ alignItems: 'flex-start' }}>
-          <div className="row" style={{ flexDirection: 'column', gap: 2 }}>
+        <li key={item.id} className="row row-top">
+          <div className="drag-handles">
             <button
               type="button"
               className="btn"
-              style={{ padding: '0.1rem 0.4rem' }}
               disabled={index === 0}
               onClick={() => move(index, -1)}
               aria-label="Move up"
@@ -46,7 +45,6 @@ export function DraggableList<T extends DraggableItem>({
             <button
               type="button"
               className="btn"
-              style={{ padding: '0.1rem 0.4rem' }}
               disabled={index === items.length - 1}
               onClick={() => move(index, 1)}
               aria-label="Move down"
@@ -54,7 +52,7 @@ export function DraggableList<T extends DraggableItem>({
               ↓
             </button>
           </div>
-          <div style={{ flex: 1 }}>{renderItem(item)}</div>
+          <div className="grow">{renderItem(item)}</div>
         </li>
       ))}
     </ul>

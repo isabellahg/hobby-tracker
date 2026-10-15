@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react'
+import { useState } from 'react'
 
 /**
  * Shows text that turns into an input when clicked. Enter or blur saves,
@@ -9,13 +9,13 @@ export function InlineEdit({
   onSave,
   placeholder,
   ariaLabel,
-  style,
+  className,
 }: {
   value: string
   onSave: (next: string) => void
   placeholder?: string
   ariaLabel: string
-  style?: CSSProperties
+  className?: string
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value)
@@ -43,7 +43,7 @@ export function InlineEdit({
             setEditing(false)
           }
         }}
-        style={style}
+        className={className}
       />
     )
   }
@@ -51,14 +51,13 @@ export function InlineEdit({
   return (
     <button
       type="button"
-      className="inline-edit"
+      className={className ? `inline-edit ${className}` : 'inline-edit'}
       title="Click to edit"
       aria-label={`${ariaLabel}: ${value || placeholder || ''}`}
       onClick={() => {
         setDraft(value)
         setEditing(true)
       }}
-      style={style}
     >
       {value || <span className="muted">{placeholder}</span>}
       <span className="inline-edit-icon" aria-hidden="true">

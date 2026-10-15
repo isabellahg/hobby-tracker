@@ -7,8 +7,13 @@ import { computeDayMarks } from '../../domain/logic/dayMark'
 import { computeWeekStreak } from '../../domain/logic/weekStreak'
 import { addWeeks, getDayOfWeek, getWeekEnd, getWeekStart, toISODate } from '../../domain/logic/weekUtils'
 import { WeekGrid } from '../../components/Calendar/WeekGrid'
-import { EmptyState } from '../../components/EmptyState'
+import { Panel } from '../../components/Panel'
+import { sessionTitle } from '../session/sessionTitle'
 import { PlanningBoard } from './PlanningBoard'
+
+function formatMinutes(sec: number): string {
+  return sec < 60 ? '<1m' : `${Math.round(sec / 60)}m`
+}
 
 export function HomeScreen() {
   const sessions = useAppStore((s) => s.sessions)
@@ -35,69 +40,109 @@ export function HomeScreen() {
     .map((id) => routines.find((r) => r.id === id))
     .filter((r): r is NonNullable<typeof r> => !!r && !r.archived)
 
+  const recent = sessions
+    .filter((s) => s.state === 'finished')
+    .sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1))
+    .slice(0, 5)
+
   async function startFromRoutine(routineId: string) {
     const result = await run({ operation: 'session.start', payload: { routineId } })
     if (result.success && result.changes[0]) navigate(`/session/${result.changes[0].id}`)
   }
 
   return (
-    <div className="stack">
+    <div className="home-layout">
       <PlanningBoard />
 
-      <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '0.5rem 0' }} />
-
-      <div className="page-header">
-        <h2>
-          Week of {format(viewedWeekStart, 'MMM d')}
-          {weekOffset === 0 && ' (this week)'}
-        </h2>
-        <div className="row">
-          <button type="button" className="btn" onClick={() => setWeekOffset((w) => w - 1)}>
-            ← Previous
-          </button>
-          <button type="button" className="btn" onClick={() => setWeekOffset(0)} disabled={weekOffset === 0}>
-            Today
-          </button>
-          <button type="button" className="btn" onClick={() => setWeekOffset((w) => w + 1)}>
-            Next →
-          </button>
-        </div>
-      </div>
-
-      <WeekGrid marks={marks} todayKey={todayKey} />
-      <p className="muted">{activeDaysViewed} active day(s) this week.</p>
-
-      <div className="card row" style={{ justifyContent: 'space-around', textAlign: 'center' }}>
-        <div>
-          <div className="muted">Current streak</div>
-          <div style={{ fontSize: '1.6rem' }}>{streak.currentStreak} wk</div>
-        </div>
-        <div>
-          <div className="muted">Longest streak</div>
-          <div style={{ fontSize: '1.6rem' }}>{streak.longestStreak} wk</div>
-        </div>
-      </div>
-
-      <div className="card">
-        <h3>Today's suggestions</h3>
-        {todaysRoutines.length === 0 ? (
-          <EmptyState>
-            Nothing planned for today — that's fine. Start anything from{' '}
-            <a href="#/routines">Routines</a> whenever you like.
-          </EmptyState>
-        ) : (
-          <div className="row" style={{ flexWrap: 'wrap' }}>
-            {todaysRoutines.map((r) => (
-              <button key={r.id} type="button" className="btn btn-primary" onClick={() => startFromRoutine(r.id)}>
-                Start "{r.name}"
+      <aside className="home-aside stack">
+        <Panel
+          title={`Week of ${format(viewedWeekStart, 'MMM d')}`}
+          icon="▦"
+          actions={
+            <>
+              <button type="button" className="icon-btn" aria-label="Previous week" onClick={() => setWeekOffset((w) => w - 1)}>
+                ‹
               </button>
-            ))}
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => setWeekOffset(0)}
+                disabled={weekOffset === 0}
+                title="Back to this week"
+              >
+                today
+              </button>
+              <button type="button" className="icon-btn" aria-label="Next week" onClick={() => setWeekOffset((w) => w + 1)}>
+                ›
+              </button>
+            </>
+          }
+        >
+          <WeekGrid marks={marks} todayKey={todayKey} />
+          <p className="desc m0">
+            {activeDaysViewed} active day{activeDaysViewed === 1 ? '' : 's'}
+            {weekOffset === 0 ? ' this week' : ' that week'}.
+          </p>
+        </Panel>
+
+        <Panel title="Consistency" icon="↯">
+          <div className="stat-row">
+            <div>
+              <div className="stat-label">Current streak</div>
+              <div className="stat-value">{streak.currentStreak} wk</div>
+            </div>
+            <div>
+              <div className="stat-label">Longest</div>
+              <div className="stat-value">{streak.longestStreak} wk</div>
+            </div>
+            <div>
+              <div className="stat-label">This week</div>
+              <div className="stat-value">{streak.weekActiveDays}/7</div>
+            </div>
           </div>
-        )}
-        <p className="muted" style={{ marginTop: '0.75rem', marginBottom: 0 }}>
-          Just a suggestion — starting anything else, or nothing at all, is equally fine.
-        </p>
-      </div>
+        </Panel>
+
+        <Panel
+          title="Today's suggestions"
+          icon="☼"
+          count={todaysRoutines.length}
+          description="Just a suggestion — starting anything else, or nothing at all, is equally fine."
+        >
+          {todaysRoutines.length === 0 ? (
+            <p className="empty-hint">
+              Nothing planned for today. Start anything from <a href="#/routines">Routines</a>.
+            </p>
+          ) : (
+            <div className="row wrap">
+              {todaysRoutines.map((r) => (
+                <button key={r.id} type="button" className="btn btn-primary" onClick={() => startFromRoutine(r.id)}>
+                  ▶ {r.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </Panel>
+
+        <Panel title="Recent sessions" icon="≡" count={recent.length}>
+          {recent.length === 0 ? (
+            <p className="empty-hint">No finished sessions yet.</p>
+          ) : (
+            <ul className="list-plain">
+              {recent.map((s) => (
+                <li key={s.id} className="list-row">
+                  <span className="dot dot-success" />
+                  <a href={`#/session/${s.id}`} className="grow bar-label">
+                    {sessionTitle(s, routines)}
+                  </a>
+                  <span className="list-row-meta">
+                    {s.durationSec !== undefined ? formatMinutes(s.durationSec) : s.dateKey.slice(5)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+      </aside>
     </div>
   )
 }

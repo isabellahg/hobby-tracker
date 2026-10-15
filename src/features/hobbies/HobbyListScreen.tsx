@@ -51,6 +51,9 @@ export function HobbyListScreen() {
     <div className="stack">
       <div className="page-header">
         <h2>Hobbies & Skills</h2>
+        <span className="muted small">
+          {hobbies.length} hobbies · {skills.length} skills
+        </span>
       </div>
 
       <div className="card row">
@@ -66,17 +69,17 @@ export function HobbyListScreen() {
           Add hobby
         </button>
       </div>
-      {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
+      {error && <p className="error">{error}</p>}
 
       {hobbies.length === 0 && <EmptyState>No hobbies yet. Add your first one above.</EmptyState>}
 
-      <div className="stack">
+      <div className="stack stack-sm">
         {hobbies.map((hobby) => {
           const hobbySkills = skills.filter((sk) => sk.hobbyId === hobby.id)
           return (
             <div key={hobby.id} className="card stack">
-              <div className="page-header" style={{ marginBottom: 0 }}>
-                <h3 style={{ margin: 0 }}>
+              <div className="page-header">
+                <h3>
                   <InlineEdit
                     value={hobby.name}
                     ariaLabel="Hobby name"
@@ -87,7 +90,7 @@ export function HobbyListScreen() {
                   Archive
                 </button>
               </div>
-              <div className="muted">
+              <div className="desc m0">
                 <InlineEdit
                   value={hobby.description ?? ''}
                   placeholder="Add a description"
@@ -98,9 +101,9 @@ export function HobbyListScreen() {
                 />
               </div>
 
-              <div className="row" style={{ flexWrap: 'wrap' }}>
+              <div className="row wrap">
                 {hobbySkills.map((skill) => (
-                  <Chip key={skill.id}>
+                  <Chip key={skill.id} tone="skill">
                     <InlineEdit
                       value={skill.name}
                       ariaLabel="Skill name"

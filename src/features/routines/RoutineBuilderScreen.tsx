@@ -83,13 +83,13 @@ export function RoutineBuilderScreen() {
         {hobbies.length > 0 && (
           <div className="field">
             <label>Hobbies</label>
-            <div className="row" style={{ flexWrap: 'wrap' }}>
+            <div className="row wrap">
               {hobbies.map((h) => (
                 <button
                   key={h.id}
                   type="button"
-                  className="btn"
-                  style={{ background: hobbyIds.includes(h.id) ? 'var(--accent-dim)' : undefined }}
+                  className="pill pill-hobby"
+                  aria-pressed={hobbyIds.includes(h.id)}
                   onClick={() => toggle(hobbyIds, setHobbyIds, h.id)}
                 >
                   {h.name}
@@ -102,13 +102,13 @@ export function RoutineBuilderScreen() {
         {skills.length > 0 && (
           <div className="field">
             <label>Skills</label>
-            <div className="row" style={{ flexWrap: 'wrap' }}>
+            <div className="row wrap">
               {skills.map((sk) => (
                 <button
                   key={sk.id}
                   type="button"
-                  className="btn"
-                  style={{ background: skillIds.includes(sk.id) ? 'var(--accent-dim)' : undefined }}
+                  className="pill"
+                  aria-pressed={skillIds.includes(sk.id)}
                   onClick={() => toggle(skillIds, setSkillIds, sk.id)}
                 >
                   {sk.name}
@@ -120,12 +120,13 @@ export function RoutineBuilderScreen() {
       </div>
 
       <div className="card stack">
-        <h3 style={{ margin: 0 }}>Tasks ({taskDefIds.length})</h3>
+        <h3 className="m0">Tasks ({taskDefIds.length})</h3>
         {taskDefIds.length > 0 && (
-          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }} className="stack">
+          <ul className="list-plain">
             {taskDefIds.map((tid) => (
-              <li key={tid} className="row" style={{ justifyContent: 'space-between' }}>
-                <span>{taskDefById.get(tid)?.label ?? '(unknown task)'}</span>
+              <li key={tid} className="list-row">
+                <span className="dot dot-violet" />
+                <span className="grow">{taskDefById.get(tid)?.label ?? '(unknown task)'}</span>
                 <button
                   type="button"
                   className="btn"

@@ -61,8 +61,8 @@ export function DataManagementScreen() {
       </div>
 
       <div className="card stack">
-        <h3 style={{ margin: 0 }}>Export</h3>
-        <p className="muted">Download your entire dataset as a JSON file.</p>
+        <h3 className="m0">Export</h3>
+        <p className="desc m0">Download your entire dataset as a JSON file.</p>
         <div>
           <button type="button" className="btn btn-primary" onClick={handleExport}>
             Export to file
@@ -71,8 +71,8 @@ export function DataManagementScreen() {
       </div>
 
       <div className="card stack">
-        <h3 style={{ margin: 0 }}>Import from file</h3>
-        <p className="muted">
+        <h3 className="m0">Import from file</h3>
+        <p className="desc m0">
           Nothing is overwritten or duplicated silently — you'll see exactly what would change before
           anything is applied.
         </p>
@@ -86,12 +86,12 @@ export function DataManagementScreen() {
         </div>
       </div>
 
-      {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
+      {error && <p className="error">{error}</p>}
       {status && <p className="muted">{status}</p>}
 
       <div className="card">
-        <h3 style={{ margin: 0 }}>LLM Import</h3>
-        <p className="muted">Paste operation JSON from an LLM under the "LLM Import" tab.</p>
+        <h3 className="m0">LLM Import</h3>
+        <p className="desc m0">Paste operation JSON from an LLM under the "LLM Import" tab.</p>
       </div>
 
       {pendingImport && diffs && (
@@ -107,7 +107,7 @@ export function DataManagementScreen() {
         >
           <div className="stack">
             <div className="row">
-              <label>
+              <label className="inline">
                 <input
                   type="radio"
                   checked={mode === 'merge'}
@@ -117,7 +117,7 @@ export function DataManagementScreen() {
               </label>
             </div>
             <div className="row">
-              <label>
+              <label className="inline">
                 <input
                   type="radio"
                   checked={mode === 'replace'}
@@ -126,10 +126,10 @@ export function DataManagementScreen() {
                 Replace everything with this file
               </label>
             </div>
-            <table style={{ width: '100%', fontSize: '0.85rem' }}>
+            <table className="kv-table">
               <thead>
                 <tr>
-                  <th style={{ textAlign: 'left' }}>Store</th>
+                  <th>Store</th>
                   <th>New</th>
                   <th>Changed</th>
                   <th>Unchanged</th>
@@ -139,9 +139,9 @@ export function DataManagementScreen() {
                 {diffs.map((d) => (
                   <tr key={d.table}>
                     <td>{d.table}</td>
-                    <td style={{ textAlign: 'center' }}>{d.toCreate}</td>
-                    <td style={{ textAlign: 'center' }}>{d.toUpdate}</td>
-                    <td style={{ textAlign: 'center' }}>{d.unchanged}</td>
+                    <td>{d.toCreate}</td>
+                    <td>{d.toUpdate}</td>
+                    <td>{d.unchanged}</td>
                   </tr>
                 ))}
               </tbody>

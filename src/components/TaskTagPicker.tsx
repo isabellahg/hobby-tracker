@@ -28,40 +28,36 @@ export function TaskTagPicker({
   onChangeKind: (kind: TaskKind) => void
 }) {
   return (
-    <div className="stack">
+    <div>
       <div className="field">
         <label>Type</label>
-        <div className="row" style={{ flexWrap: 'wrap' }} role="radiogroup" aria-label="Task type">
+        <div className="row wrap" role="radiogroup" aria-label="Task type">
           {KIND_OPTIONS.map((opt) => (
             <button
               key={opt.kind}
               type="button"
               role="radio"
               aria-checked={kind === opt.kind}
-              className="btn"
+              className="pill"
               title={opt.hint}
-              style={{ background: kind === opt.kind ? 'var(--accent-dim)' : undefined }}
               onClick={() => onChangeKind(opt.kind)}
             >
               {opt.label}
             </button>
           ))}
         </div>
-        <span className="muted" style={{ fontSize: '0.8rem' }}>
-          {KIND_OPTIONS.find((o) => o.kind === kind)?.hint}
-        </span>
+        <span className="field-hint">{KIND_OPTIONS.find((o) => o.kind === kind)?.hint}</span>
       </div>
       {hobbies.length > 0 && (
         <div className="field">
           <label>Hobby</label>
-          <div className="row" style={{ flexWrap: 'wrap' }}>
+          <div className="row wrap">
             {hobbies.map((h) => (
               <button
                 key={h.id}
                 type="button"
-                className="btn"
+                className="pill pill-hobby"
                 aria-pressed={selectedHobbyIds.includes(h.id)}
-                style={{ background: selectedHobbyIds.includes(h.id) ? 'var(--accent-dim)' : undefined }}
                 onClick={() => onToggleHobby(h.id)}
               >
                 {h.name}
@@ -73,14 +69,13 @@ export function TaskTagPicker({
       {skills.length > 0 && (
         <div className="field">
           <label>Skill</label>
-          <div className="row" style={{ flexWrap: 'wrap' }}>
+          <div className="row wrap">
             {skills.map((sk) => (
               <button
                 key={sk.id}
                 type="button"
-                className="btn"
+                className="pill"
                 aria-pressed={selectedSkillIds.includes(sk.id)}
-                style={{ background: selectedSkillIds.includes(sk.id) ? 'var(--accent-dim)' : undefined }}
                 onClick={() => onToggleSkill(sk.id)}
               >
                 {sk.name}

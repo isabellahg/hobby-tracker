@@ -16,28 +16,11 @@ export function ConfirmDialog({
   onCancel: () => void
 }) {
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
-      }}
-      onClick={onCancel}
-    >
-      <div
-        className="card stack"
-        style={{ minWidth: 320, maxWidth: 480 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 style={{ margin: 0 }}>{title}</h3>
+    <div role="dialog" aria-modal="true" className="dialog-backdrop" onClick={onCancel}>
+      <div className="card stack dialog" onClick={(e) => e.stopPropagation()}>
+        <h3 className="m0">{title}</h3>
         {children}
-        <div className="row" style={{ justifyContent: 'flex-end' }}>
+        <div className="row row-end">
           <button type="button" className="btn" onClick={onCancel}>
             Cancel
           </button>

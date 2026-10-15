@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useAppStore } from '../../state/store'
 import { run } from '../../state/actions'
-import { EmptyState } from '../../components/EmptyState'
 import { Chip } from '../../components/Chip'
 import { InlineEdit } from '../../components/InlineEdit'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { Panel } from '../../components/Panel'
 import { sessionTitle } from '../session/sessionTitle'
 
 export function HistoryScreen() {
@@ -35,136 +35,141 @@ export function HistoryScreen() {
 
   const hobbyById = new Map(hobbies.map((h) => [h.id, h]))
   const skillById = new Map(skills.map((s) => [s.id, s]))
+  const totalMinutes = Math.round(filtered.reduce((sum, s) => sum + (s.durationSec ?? 0), 0) / 60)
 
   return (
     <div className="stack">
       <div className="page-header">
         <h2>History</h2>
+        <span className="muted small">
+          {filtered.length} session{filtered.length === 1 ? '' : 's'} · {totalMinutes} min
+        </span>
       </div>
 
-      <div className="card row" style={{ flexWrap: 'wrap' }}>
-        <div className="field" style={{ minWidth: 140 }}>
-          <label htmlFor="f-start">From</label>
-          <input id="f-start" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+      <Panel title="Filters" icon="⚲">
+        <div className="row wrap row-top">
+          <div className="field field-narrow">
+            <label htmlFor="f-start">From</label>
+            <input id="f-start" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+          </div>
+          <div className="field field-narrow">
+            <label htmlFor="f-end">To</label>
+            <input id="f-end" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
+          </div>
+          <div className="field field-narrow">
+            <label htmlFor="f-routine">Routine</label>
+            <select id="f-routine" value={routineId} onChange={(e) => setRoutineId(e.target.value)}>
+              <option value="">Any</option>
+              {routines.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field field-narrow">
+            <label htmlFor="f-hobby">Hobby</label>
+            <select id="f-hobby" value={hobbyId} onChange={(e) => setHobbyId(e.target.value)}>
+              <option value="">Any</option>
+              {hobbies.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field field-narrow">
+            <label htmlFor="f-skill">Skill</label>
+            <select id="f-skill" value={skillId} onChange={(e) => setSkillId(e.target.value)}>
+              <option value="">Any</option>
+              {skills.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-        <div className="field" style={{ minWidth: 140 }}>
-          <label htmlFor="f-end">To</label>
-          <input id="f-end" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
-        </div>
-        <div className="field" style={{ minWidth: 160 }}>
-          <label htmlFor="f-routine">Routine</label>
-          <select id="f-routine" value={routineId} onChange={(e) => setRoutineId(e.target.value)}>
-            <option value="">Any</option>
-            {routines.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field" style={{ minWidth: 160 }}>
-          <label htmlFor="f-hobby">Hobby</label>
-          <select id="f-hobby" value={hobbyId} onChange={(e) => setHobbyId(e.target.value)}>
-            <option value="">Any</option>
-            {hobbies.map((h) => (
-              <option key={h.id} value={h.id}>
-                {h.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field" style={{ minWidth: 160 }}>
-          <label htmlFor="f-skill">Skill</label>
-          <select id="f-skill" value={skillId} onChange={(e) => setSkillId(e.target.value)}>
-            <option value="">Any</option>
-            {skills.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+      </Panel>
 
-      {filtered.length === 0 && <EmptyState>No sessions match these filters.</EmptyState>}
-
-      <div className="stack">
-        {filtered.map((s) => {
-          const completed = s.taskEntries.filter((e) => e.status === 'completed')
-          const unfinished = s.taskEntries.filter((e) => e.status === 'pending')
-          const isExpanded = expandedId === s.id
-          return (
-            <div key={s.id} className="card stack">
-              <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
-                <div className="row" style={{ flexWrap: 'wrap' }}>
-                  <strong>{s.dateKey}</strong>
+      <Panel title="Sessions" icon="≡" count={filtered.length}>
+        {filtered.length === 0 && <p className="empty-hint">No sessions match these filters.</p>}
+        <ul className="list-plain">
+          {filtered.map((s) => {
+            const completed = s.taskEntries.filter((e) => e.status === 'completed')
+            const unfinished = s.taskEntries.filter((e) => e.status === 'pending')
+            const isExpanded = expandedId === s.id
+            const discarded = s.state === 'discarded'
+            return (
+              <li key={s.id} className="list-item">
+                <div className="row wrap">
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-expanded={isExpanded}
+                    aria-label={isExpanded ? 'Hide details' : 'Show details'}
+                    onClick={() => setExpandedId(isExpanded ? null : s.id)}
+                  >
+                    {isExpanded ? '▾' : '▸'}
+                  </button>
+                  <span className={discarded ? 'dot' : 'dot dot-success'} />
+                  <span className="muted">{s.dateKey}</span>
                   <InlineEdit
                     value={sessionTitle(s, routines)}
                     ariaLabel="Session name"
                     onSave={(name) => run({ operation: 'session.rename', payload: { sessionId: s.id, name } })}
+                    className={discarded ? 'muted' : undefined}
                   />
-                  {s.state === 'discarded' ? (
-                    <span className="muted">(discarded)</span>
-                  ) : (
-                    <span className="muted">
-                      · {completed.length}/{s.taskEntries.length} tasks
-                    </span>
-                  )}
-                </div>
-                <div className="row" style={{ flexWrap: 'wrap' }}>
                   {s.hobbyIds.map((id) => (
-                    <Chip key={id}>{hobbyById.get(id)?.name ?? '?'}</Chip>
+                    <Chip key={id} tone="hobby">
+                      {hobbyById.get(id)?.name ?? '?'}
+                    </Chip>
                   ))}
                   {s.skillIds.map((id) => (
-                    <Chip key={id}>{skillById.get(id)?.name ?? '?'}</Chip>
+                    <Chip key={id} tone="skill">
+                      {skillById.get(id)?.name ?? '?'}
+                    </Chip>
                   ))}
-                  <button
-                    type="button"
-                    className="btn"
-                    aria-expanded={isExpanded}
-                    onClick={() => setExpandedId(isExpanded ? null : s.id)}
-                  >
-                    {isExpanded ? 'Hide' : 'Details'}
-                  </button>
+                  <span className="list-row-meta">
+                    {discarded
+                      ? 'discarded'
+                      : `${completed.length}/${s.taskEntries.length} tasks${
+                          s.durationSec !== undefined ? ` · ${s.durationSec < 60 ? "<1m" : `${Math.round(s.durationSec / 60)}m`}` : ''
+                        }`}
+                  </span>
                 </div>
-              </div>
-              {isExpanded && (
-                <div className="row" style={{ alignItems: 'flex-start', gap: '2rem', flexWrap: 'wrap' }}>
-                  <div>
-                    <div className="muted">Completed</div>
-                    <ul style={{ margin: 0 }}>
-                      {completed.map((e) => (
-                        <li key={e.id}>{e.label}</li>
-                      ))}
-                      {completed.length === 0 && <li className="muted">None</li>}
-                    </ul>
-                  </div>
-                  <div>
-                    <div className="muted">Unfinished</div>
-                    <ul style={{ margin: 0 }}>
-                      {unfinished.map((e) => (
-                        <li key={e.id}>{e.label}</li>
-                      ))}
-                      {unfinished.length === 0 && <li className="muted">None</li>}
-                    </ul>
-                  </div>
-                  {s.durationSec !== undefined && (
+                {isExpanded && (
+                  <div className="list-item-details row row-top wrap gap-lg">
                     <div>
-                      <div className="muted">Duration</div>
-                      {Math.round(s.durationSec / 60)} min
+                      <div className="section-title small">Completed ({completed.length})</div>
+                      <ul className="list-bullets">
+                        {completed.map((e) => (
+                          <li key={e.id}>{e.label}</li>
+                        ))}
+                        {completed.length === 0 && <li className="muted">None</li>}
+                      </ul>
                     </div>
-                  )}
-                  <div style={{ marginLeft: 'auto' }}>
-                    <button type="button" className="btn btn-danger" onClick={() => setDeletingId(s.id)}>
-                      Delete session
-                    </button>
+                    <div>
+                      <div className="section-title small">Unfinished ({unfinished.length})</div>
+                      <ul className="list-bullets">
+                        {unfinished.map((e) => (
+                          <li key={e.id}>{e.label}</li>
+                        ))}
+                        {unfinished.length === 0 && <li className="muted">None</li>}
+                      </ul>
+                    </div>
+                    <div className="ml-auto">
+                      <button type="button" className="btn btn-danger" onClick={() => setDeletingId(s.id)}>
+                        Delete session
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      </Panel>
 
       {deletingSession && (
         <ConfirmDialog
