@@ -12,7 +12,12 @@ import {
   handleSkillCreate,
   handleSkillUpdate,
 } from './handlers/hobbySkillOps'
-import { handleTaskDefArchive, handleTaskDefCreate, handleTaskDefUpdate } from './handlers/taskDefOps'
+import {
+  handleTaskDefArchive,
+  handleTaskDefCreate,
+  handleTaskDefFinish,
+  handleTaskDefUpdate,
+} from './handlers/taskDefOps'
 import {
   handleRoutineArchive,
   handleRoutineCreate,
@@ -23,9 +28,12 @@ import {
 import { handleWeeklyPlanUpdate } from './handlers/weeklyPlanOps'
 import {
   handleSessionAddAdHocTask,
+  handleSessionDelete,
   handleSessionDiscard,
   handleSessionFinish,
   handleSessionPause,
+  handleSessionRename,
+  handleSessionRenameTask,
   handleSessionReorderTasks,
   handleSessionResume,
   handleSessionSetTaskStatus,
@@ -34,14 +42,8 @@ import {
   handleSessionStartFromBucket,
   handleSessionToggleTask,
 } from './handlers/sessionOps'
-import { handleProjectCreate, handleProjectSetNextAction, handleProjectUpdate } from './handlers/projectOps'
 import { handleRecordCreate, handleRecordDelete, handleRecordUpdate } from './handlers/recordOps'
-import {
-  handleQueryCalendar,
-  handleQueryHistory,
-  handleQueryProgress,
-  handleQueryProjects,
-} from './handlers/queryOps'
+import { handleQueryCalendar, handleQueryHistory, handleQueryProgress } from './handlers/queryOps'
 import {
   handleBucketAddTask,
   handleBucketCreate,
@@ -73,6 +75,7 @@ const handlers: Record<OperationName, RegistryEntry> = {
   'taskDef.create': { schema: v.taskDefCreateSchema, handle: handleTaskDefCreate },
   'taskDef.update': { schema: v.taskDefUpdateSchema, handle: handleTaskDefUpdate },
   'taskDef.archive': { schema: v.taskDefArchiveSchema, handle: handleTaskDefArchive },
+  'taskDef.finish': { schema: v.taskDefFinishSchema, handle: handleTaskDefFinish },
   'routine.create': { schema: v.routineCreateSchema, handle: handleRoutineCreate },
   'routine.update': { schema: v.routineUpdateSchema, handle: handleRoutineUpdate },
   'routine.duplicate': { schema: v.routineDuplicateSchema, handle: handleRoutineDuplicate },
@@ -90,23 +93,21 @@ const handlers: Record<OperationName, RegistryEntry> = {
   'session.finish': { schema: v.sessionFinishSchema, handle: handleSessionFinish },
   'session.discard': { schema: v.sessionIdSchema, handle: handleSessionDiscard },
   'session.startFromBucket': { schema: v.sessionStartFromBucketSchema, handle: handleSessionStartFromBucket },
+  'session.rename': { schema: v.sessionRenameSchema, handle: handleSessionRename },
+  'session.renameTask': { schema: v.sessionRenameTaskSchema, handle: handleSessionRenameTask },
+  'session.delete': { schema: v.sessionIdSchema, handle: handleSessionDelete },
   'bucket.create': { schema: v.bucketCreateSchema, handle: handleBucketCreate },
   'bucket.rename': { schema: v.bucketRenameSchema, handle: handleBucketRename },
   'bucket.delete': { schema: v.bucketIdSchema, handle: handleBucketDelete },
   'bucket.addTask': { schema: v.bucketTaskSchema, handle: handleBucketAddTask },
   'bucket.removeTask': { schema: v.bucketTaskSchema, handle: handleBucketRemoveTask },
   'bucket.reorderTasks': { schema: v.bucketReorderTasksSchema, handle: handleBucketReorderTasks },
-  'project.create': { schema: v.projectCreateSchema, handle: handleProjectCreate },
-  'project.update': { schema: v.projectUpdateSchema, handle: handleProjectUpdate },
-  'project.setNextAction': { schema: v.projectSetNextActionSchema, handle: handleProjectSetNextAction },
   'record.create': { schema: v.recordCreateSchema, handle: handleRecordCreate },
   'record.update': { schema: v.recordUpdateSchema, handle: handleRecordUpdate },
   'record.delete': { schema: v.recordDeleteSchema, handle: handleRecordDelete },
   'query.calendar': { schema: v.queryCalendarSchema, handle: handleQueryCalendar },
   'query.history': { schema: v.queryHistorySchema, handle: handleQueryHistory },
-  'query.progress': { schema: v.queryProgressSchema, handle: handleQueryProgress },
-  'query.projects': { schema: v.queryProjectsSchema, handle: handleQueryProjects },
-}
+  'query.progress': { schema: v.queryProgressSchema, handle: handleQueryProgress },}
 
 /**
  * Thrown internally to abort a Dexie transaction we never intended to

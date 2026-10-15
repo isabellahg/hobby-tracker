@@ -2,7 +2,10 @@ import { useMemo, useState } from 'react'
 import { useAppStore } from '../../state/store'
 import { run } from '../../state/actions'
 import { isQualifyingSession } from '../../domain/logic/qualifyingSession'
+import { toISODate } from '../../domain/logic/weekUtils'
 import { EmptyState } from '../../components/EmptyState'
+import { InlineEdit } from '../../components/InlineEdit'
+import { ConfirmDialog } from '../../components/ConfirmDialog'
 
 type Tab = 'volume' | 'tasks' | 'records'
 
@@ -12,6 +15,8 @@ export function ProgressScreen() {
   const hobbies = useAppStore((s) => s.hobbies)
   const records = useAppStore((s) => s.personalRecords)
   const [tab, setTab] = useState<Tab>('volume')
+  const [deletingRecordId, setDeletingRecordId] = useState<string | null>(null)
+  const hobbyById = new Map(hobbies.map((h) => [h.id, h]))
 
   const qualifying = useMemo(() => sessions.filter(isQualifyingSession), [sessions])
 
@@ -30,13 +35,13 @@ export function ProgressScreen() {
   const [recDescription, setRecDescription] = useState('')
 
   async function addRecord() {
-    if (!recHobbyId || !recDescription.trim()) return
+    if (!recDescription.trim()) return
     await run({
       operation: 'record.create',
       payload: {
-        hobbyId: recHobbyId,
+        hobbyId: recHobbyId || undefined,
         skillId: recSkillId || undefined,
-        date: new Date().toISOString().slice(0, 10),
+        date: toISODate(new Date()),
         description: recDescription.trim(),
       },
     })
@@ -118,7 +123,7 @@ export function ProgressScreen() {
             <h3 style={{ margin: 0 }}>Record a milestone</h3>
             <div className="row">
               <select value={recHobbyId} onChange={(e) => setRecHobbyId(e.target.value)}>
-                <option value="">Hobby…</option>
+                <option value="">Hobby (optional)…</option>
                 {hobbies.map((h) => (
                   <option key={h.id} value={h.id}>
                     {h.name}
@@ -127,7 +132,7 @@ export function ProgressScreen() {
               </select>
               <select value={recSkillId} onChange={(e) => setRecSkillId(e.target.value)}>
                 <option value="">Skill (optional)…</option>
-                {skills.filter((sk) => sk.hobbyId === recHobbyId).map((sk) => (
+                {skills.filter((sk) => !sk.archived).map((sk) => (
                   <option key={sk.id} value={sk.id}>
                     {sk.name}
                   </option>
@@ -154,13 +159,38 @@ export function ProgressScreen() {
               .slice()
               .sort((a, b) => (a.date < b.date ? 1 : -1))
               .map((r) => (
-                <div key={r.id} className="card">
-                  <div className="muted">{r.date}</div>
-                  <div>{r.description}</div>
+                <div key={r.id} className="card row" style={{ justifyContent: 'space-between' }}>
+                  <div>
+                    <div className="muted">
+                      {r.date}
+                      {r.hobbyId && hobbyById.get(r.hobbyId) && ` · ${hobbyById.get(r.hobbyId)!.name}`}
+                    </div>
+                    <InlineEdit
+                      value={r.description}
+                      ariaLabel="Milestone"
+                      onSave={(description) => run({ operation: 'record.update', payload: { id: r.id, description } })}
+                    />
+                  </div>
+                  <button type="button" className="btn btn-danger" onClick={() => setDeletingRecordId(r.id)}>
+                    Delete
+                  </button>
                 </div>
               ))}
           </div>
         </div>
+      )}
+
+      {deletingRecordId && (
+        <ConfirmDialog
+          title="Delete this milestone?"
+          confirmLabel="Delete"
+          danger
+          onConfirm={async () => {
+            await run({ operation: 'record.delete', payload: { id: deletingRecordId } })
+            setDeletingRecordId(null)
+          }}
+          onCancel={() => setDeletingRecordId(null)}
+        />
       )}
     </div>
   )

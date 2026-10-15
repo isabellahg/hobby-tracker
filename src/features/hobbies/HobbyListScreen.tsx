@@ -3,12 +3,15 @@ import { useAppStore } from '../../state/store'
 import { run } from '../../state/actions'
 import { EmptyState } from '../../components/EmptyState'
 import { Chip } from '../../components/Chip'
+import { InlineEdit } from '../../components/InlineEdit'
+import { ArchivedSection } from '../../components/ArchivedSection'
 
 export function HobbyListScreen() {
   const allHobbies = useAppStore((s) => s.hobbies)
   const allSkills = useAppStore((s) => s.skills)
   const hobbies = allHobbies.filter((h) => !h.archived)
   const skills = allSkills.filter((sk) => !sk.archived)
+  const hobbyById = new Map(allHobbies.map((h) => [h.id, h]))
   const [newHobbyName, setNewHobbyName] = useState('')
   const [skillDrafts, setSkillDrafts] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
@@ -36,12 +39,12 @@ export function HobbyListScreen() {
     setError(null)
   }
 
-  async function archiveHobby(id: string) {
-    await run({ operation: 'hobby.archive', payload: { id, archived: true } })
+  function setHobbyArchived(id: string, archived: boolean) {
+    run({ operation: 'hobby.archive', payload: { id, archived } })
   }
 
-  async function archiveSkill(id: string) {
-    await run({ operation: 'skill.archive', payload: { id, archived: true } })
+  function setSkillArchived(id: string, archived: boolean) {
+    run({ operation: 'skill.archive', payload: { id, archived } })
   }
 
   return (
@@ -53,6 +56,7 @@ export function HobbyListScreen() {
       <div className="card row">
         <input
           type="text"
+          aria-label="New hobby name"
           placeholder="New hobby name (e.g. Game development)"
           value={newHobbyName}
           onChange={(e) => setNewHobbyName(e.target.value)}
@@ -72,22 +76,42 @@ export function HobbyListScreen() {
           return (
             <div key={hobby.id} className="card stack">
               <div className="page-header" style={{ marginBottom: 0 }}>
-                <h3 style={{ margin: 0 }}>{hobby.name}</h3>
-                <button type="button" className="btn btn-danger" onClick={() => archiveHobby(hobby.id)}>
+                <h3 style={{ margin: 0 }}>
+                  <InlineEdit
+                    value={hobby.name}
+                    ariaLabel="Hobby name"
+                    onSave={(name) => run({ operation: 'hobby.update', payload: { id: hobby.id, name } })}
+                  />
+                </h3>
+                <button type="button" className="btn btn-danger" onClick={() => setHobbyArchived(hobby.id, true)}>
                   Archive
                 </button>
               </div>
-              {hobby.description && <p className="muted">{hobby.description}</p>}
+              <div className="muted">
+                <InlineEdit
+                  value={hobby.description ?? ''}
+                  placeholder="Add a description"
+                  ariaLabel={`Description of ${hobby.name}`}
+                  onSave={(description) =>
+                    run({ operation: 'hobby.update', payload: { id: hobby.id, description } })
+                  }
+                />
+              </div>
 
               <div className="row" style={{ flexWrap: 'wrap' }}>
                 {hobbySkills.map((skill) => (
                   <Chip key={skill.id}>
-                    {skill.name}
+                    <InlineEdit
+                      value={skill.name}
+                      ariaLabel="Skill name"
+                      onSave={(name) => run({ operation: 'skill.update', payload: { id: skill.id, name } })}
+                    />
                     <button
                       type="button"
-                      onClick={() => archiveSkill(skill.id)}
+                      className="icon-btn"
+                      onClick={() => setSkillArchived(skill.id, true)}
                       aria-label={`Archive ${skill.name}`}
-                      style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}
+                      title="Archive skill"
                     >
                       ×
                     </button>
@@ -99,6 +123,7 @@ export function HobbyListScreen() {
               <div className="row">
                 <input
                   type="text"
+                  aria-label={`New skill for ${hobby.name}`}
                   placeholder="New skill (e.g. Anatomy)"
                   value={skillDrafts[hobby.id] ?? ''}
                   onChange={(e) => setSkillDrafts((d) => ({ ...d, [hobby.id]: e.target.value }))}
@@ -112,6 +137,19 @@ export function HobbyListScreen() {
           )
         })}
       </div>
+
+      <ArchivedSection
+        title="Archived hobbies"
+        items={allHobbies.filter((h) => h.archived).map((h) => ({ id: h.id, label: h.name }))}
+        onRestore={(id) => setHobbyArchived(id, false)}
+      />
+      <ArchivedSection
+        title="Archived skills"
+        items={allSkills
+          .filter((s) => s.archived)
+          .map((s) => ({ id: s.id, label: `${s.name} (${hobbyById.get(s.hobbyId)?.name ?? 'unknown hobby'})` }))}
+        onRestore={(id) => setSkillArchived(id, false)}
+      />
     </div>
   )
 }

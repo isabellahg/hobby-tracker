@@ -1,5 +1,7 @@
 import type { Hobby } from '../domain/types/hobby'
 import type { Skill } from '../domain/types/skill'
+import type { TaskKind } from '../domain/types/taskDef'
+import { KIND_OPTIONS } from './taskKinds'
 
 /**
  * Hobby and skill are picked independently — this is deliberately not a
@@ -11,22 +13,44 @@ export function TaskTagPicker({
   skills,
   selectedHobbyIds,
   selectedSkillIds,
-  isRecurring,
+  kind,
   onToggleHobby,
   onToggleSkill,
-  onToggleRecurring,
+  onChangeKind,
 }: {
   hobbies: Hobby[]
   skills: Skill[]
   selectedHobbyIds: string[]
   selectedSkillIds: string[]
-  isRecurring: boolean
+  kind: TaskKind
   onToggleHobby: (id: string) => void
   onToggleSkill: (id: string) => void
-  onToggleRecurring: (value: boolean) => void
+  onChangeKind: (kind: TaskKind) => void
 }) {
   return (
     <div className="stack">
+      <div className="field">
+        <label>Type</label>
+        <div className="row" style={{ flexWrap: 'wrap' }} role="radiogroup" aria-label="Task type">
+          {KIND_OPTIONS.map((opt) => (
+            <button
+              key={opt.kind}
+              type="button"
+              role="radio"
+              aria-checked={kind === opt.kind}
+              className="btn"
+              title={opt.hint}
+              style={{ background: kind === opt.kind ? 'var(--accent-dim)' : undefined }}
+              onClick={() => onChangeKind(opt.kind)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <span className="muted" style={{ fontSize: '0.8rem' }}>
+          {KIND_OPTIONS.find((o) => o.kind === kind)?.hint}
+        </span>
+      </div>
       {hobbies.length > 0 && (
         <div className="field">
           <label>Hobby</label>
@@ -36,6 +60,7 @@ export function TaskTagPicker({
                 key={h.id}
                 type="button"
                 className="btn"
+                aria-pressed={selectedHobbyIds.includes(h.id)}
                 style={{ background: selectedHobbyIds.includes(h.id) ? 'var(--accent-dim)' : undefined }}
                 onClick={() => onToggleHobby(h.id)}
               >
@@ -54,6 +79,7 @@ export function TaskTagPicker({
                 key={sk.id}
                 type="button"
                 className="btn"
+                aria-pressed={selectedSkillIds.includes(sk.id)}
                 style={{ background: selectedSkillIds.includes(sk.id) ? 'var(--accent-dim)' : undefined }}
                 onClick={() => onToggleSkill(sk.id)}
               >
@@ -63,14 +89,6 @@ export function TaskTagPicker({
           </div>
         </div>
       )}
-      <label className="row" style={{ marginBottom: 0 }}>
-        <input
-          type="checkbox"
-          checked={isRecurring}
-          onChange={(e) => onToggleRecurring(e.target.checked)}
-        />
-        Recurring habit (stays in the backlog after a session uses it)
-      </label>
     </div>
   )
 }

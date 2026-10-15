@@ -4,21 +4,15 @@ import {
   finishSession,
   pauseSession,
   resumeSession,
+  renameTask,
   reorderTasks,
   setTaskStatus,
   skipTask,
   startSession,
   toggleTask,
 } from '../../logic/sessionLifecycle'
-import { attachCarryForwardToProject, buildCarryForwardEntries } from '../../logic/carryForward'
 import type { TaskDef } from '../../types/taskDef'
-import {
-  planBucketRepo,
-  projectRepo,
-  routineRepo,
-  sessionRepo,
-  taskDefRepo,
-} from '../../../storage/repositories'
+import { planBucketRepo, routineRepo, sessionRepo, taskDefRepo } from '../../../storage/repositories'
 import type { ChangedRecord } from '../envelope'
 import type { OperationContext } from '../context'
 import type {
@@ -26,6 +20,8 @@ import type {
   sessionEntryIdSchema,
   sessionFinishSchema,
   sessionIdSchema,
+  sessionRenameSchema,
+  sessionRenameTaskSchema,
   sessionReorderTasksSchema,
   sessionSetTaskStatusSchema,
   sessionStartFromBucketSchema,
@@ -60,7 +56,7 @@ export async function handleSessionStart(
   const taskDefsById = new Map(taskDefs.map((d) => [d.id, d]))
   const startedAt = resolveWhen(payload.occurredAt, ctx.now)
 
-  const session = startSession({ routine, taskDefsById, projectId: payload.projectId, now: startedAt })
+  const session = startSession({ routine, taskDefsById, now: startedAt })
   await sessionRepo.put(session)
   return {
     changes: [{ store: 'sessions', id: session.id, changeType: 'created', after: session }],
@@ -166,26 +162,26 @@ export async function handleSessionFinish(
 ): Promise<{ changes: ChangedRecord[]; summary: string }> {
   const existing = await requireSession(payload.sessionId)
   const finishedAt = resolveWhen(payload.finishedAt, ctx.now)
-  const { session: finished, unfinishedEntries } = finishSession(existing, finishedAt)
+  const { session: finished } = finishSession(existing, finishedAt)
   const changes: ChangedRecord[] = [
     { store: 'sessions', id: finished.id, changeType: 'updated', before: existing, after: finished },
   ]
 
   await sessionRepo.put(finished)
 
-  if (finished.projectId && unfinishedEntries.length > 0) {
-    const project = await projectRepo.getById(finished.projectId)
-    if (project) {
-      const carried = buildCarryForwardEntries(finished)
-      const updatedProject = attachCarryForwardToProject(project, carried)
-      await projectRepo.put(updatedProject)
-      changes.push({
-        store: 'projects',
-        id: updatedProject.id,
-        changeType: 'updated',
-        before: project,
-        after: updatedProject,
-      })
+  // One-off tasks leave the backlog once actually completed in a session
+  // planned from Home. Routine sessions are skipped: a routine's tasks are
+  // template members meant to repeat, and archiving them would gut it.
+  if (!finished.routineId) {
+    const completedTaskDefIds = finished.taskEntries
+      .filter((e) => e.status === 'completed' && e.taskDefId)
+      .map((e) => e.taskDefId!)
+    const taskDefs = await taskDefRepo.getByIds(completedTaskDefIds)
+    for (const taskDef of taskDefs) {
+      if (taskDef.kind !== 'once' || taskDef.archived) continue
+      const archived: TaskDef = { ...taskDef, archived: true, updatedAt: ctx.now.toISOString() }
+      await taskDefRepo.put(archived)
+      changes.push({ store: 'taskDefs', id: archived.id, changeType: 'updated', before: taskDef, after: archived })
     }
   }
 
@@ -210,11 +206,10 @@ export async function handleSessionDiscard(
 }
 
 /**
- * Turns a Home planning bucket into a real session: seeds the checklist
- * from the bucket's ordered tasks, archives any one-off (non-recurring)
- * task used so it doesn't linger in the backlog, leaves recurring tasks
- * untouched so they naturally fall back into the (unfiltered) backlog once
- * the bucket itself is gone, and deletes the now-spent bucket.
+ * Turns a Home planning bucket into a real session named after it, seeded
+ * from the bucket's ordered tasks, and deletes the now-spent bucket. Tasks
+ * themselves are untouched here — one-offs only leave the backlog when
+ * completed (see handleSessionFinish).
  */
 export async function handleSessionStartFromBucket(
   payload: z.infer<typeof sessionStartFromBucketSchema>,
@@ -231,6 +226,7 @@ export async function handleSessionStartFromBucket(
   const session = startSession({
     taskDefsById,
     adHocTaskDefIds: orderedTaskDefIds,
+    name: bucket.name,
     now: startedAt,
   })
   await sessionRepo.put(session)
@@ -238,18 +234,56 @@ export async function handleSessionStartFromBucket(
     { store: 'sessions', id: session.id, changeType: 'created', after: session },
   ]
 
-  for (const taskDef of taskDefs) {
-    if (taskDef.isRecurring) continue
-    const archived: TaskDef = { ...taskDef, archived: true, updatedAt: ctx.now.toISOString() }
-    await taskDefRepo.put(archived)
-    changes.push({ store: 'taskDefs', id: archived.id, changeType: 'updated', before: taskDef, after: archived })
-  }
-
   await planBucketRepo.remove(bucket.id)
   changes.push({ store: 'planBuckets', id: bucket.id, changeType: 'deleted', before: bucket })
 
   return {
     changes,
     summary: `Start session from "${bucket.name}" (${session.taskEntries.length} task(s))`,
+  }
+}
+
+export async function handleSessionRename(
+  payload: z.infer<typeof sessionRenameSchema>,
+): Promise<{ changes: ChangedRecord[]; summary: string }> {
+  const existing = await requireSession(payload.sessionId)
+  const updated = { ...existing, name: payload.name }
+  await sessionRepo.put(updated)
+  return {
+    changes: [{ store: 'sessions', id: updated.id, changeType: 'updated', before: existing, after: updated }],
+    summary: `Rename session to "${payload.name}"`,
+  }
+}
+
+export async function handleSessionRenameTask(
+  payload: z.infer<typeof sessionRenameTaskSchema>,
+): Promise<{ changes: ChangedRecord[]; summary: string }> {
+  const existing = await requireSession(payload.sessionId)
+  if (!existing.taskEntries.some((e) => e.id === payload.entryId)) {
+    throw new Error(`Task entry ${payload.entryId} not found in this session`)
+  }
+  const updated = renameTask(existing, payload.entryId, payload.label)
+  await sessionRepo.put(updated)
+  return {
+    changes: [{ store: 'sessions', id: updated.id, changeType: 'updated', before: existing, after: updated }],
+    summary: `Rename session task to "${payload.label}"`,
+  }
+}
+
+/**
+ * Permanently removes a finished or discarded session. Marks and streaks are
+ * derived from sessions, so they recompute on their own.
+ */
+export async function handleSessionDelete(
+  payload: z.infer<typeof sessionIdSchema>,
+): Promise<{ changes: ChangedRecord[]; summary: string }> {
+  const existing = await requireSession(payload.sessionId)
+  if (existing.state === 'in_progress') {
+    throw new Error('A session in progress can only be discarded, not deleted')
+  }
+  await sessionRepo.remove(existing.id)
+  return {
+    changes: [{ store: 'sessions', id: existing.id, changeType: 'deleted', before: existing }],
+    summary: `Delete session from ${existing.dateKey}`,
   }
 }

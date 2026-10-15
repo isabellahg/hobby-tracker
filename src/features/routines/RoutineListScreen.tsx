@@ -2,6 +2,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAppStore } from '../../state/store'
 import { run } from '../../state/actions'
 import { EmptyState } from '../../components/EmptyState'
+import { ArchivedSection } from '../../components/ArchivedSection'
 
 export function RoutineListScreen() {
   const allRoutines = useAppStore((s) => s.routines)
@@ -80,6 +81,12 @@ export function RoutineListScreen() {
           Start a flexible session (no routine)
         </button>
       </div>
+
+      <ArchivedSection
+        title="Archived routines"
+        items={allRoutines.filter((r) => r.archived).map((r) => ({ id: r.id, label: r.name }))}
+        onRestore={(id) => run({ operation: 'routine.archive', payload: { id, archived: false } })}
+      />
     </div>
   )
 }

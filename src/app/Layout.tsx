@@ -8,7 +8,6 @@ const NAV_ITEMS: { to: string; label: string }[] = [
   { to: '/plan', label: 'Weekly Plan' },
   { to: '/history', label: 'History' },
   { to: '/progress', label: 'Progress' },
-  { to: '/projects', label: 'Projects' },
   { to: '/data', label: 'Data' },
   { to: '/import', label: 'LLM Import' },
   { to: '/settings', label: 'Settings' },

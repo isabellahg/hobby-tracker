@@ -195,6 +195,47 @@ h1, h2, h3 {
   color: var(--text-dim);
 }
 
+.inline-edit {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0.1rem 0.3rem;
+  margin: -0.1rem -0.3rem;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.inline-edit:hover,
+.inline-edit:focus-visible {
+  border-color: var(--border);
+}
+
+.inline-edit-icon {
+  font-size: 0.8em;
+  color: var(--text-dim);
+  opacity: 0;
+}
+
+.inline-edit:hover .inline-edit-icon,
+.inline-edit:focus-visible .inline-edit-icon {
+  opacity: 1;
+}
+
+.icon-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  padding: 0.1rem 0.3rem;
+}
+
+.icon-btn:hover {
+  color: var(--text);
+}
+
 .page-header {
   display: flex;
   justify-content: space-between;

@@ -32,7 +32,7 @@ export function SettingsScreen() {
       <div className="card">
         <h3 style={{ margin: 0 }}>Danger zone</h3>
         <p className="muted">
-          Permanently erase every hobby, skill, routine, session, project, and record. Export a backup
+          Permanently erase every hobby, skill, task, routine, session, and milestone. Export a backup
           first from the Data screen if you want to keep anything.
         </p>
         <button type="button" className="btn btn-danger" onClick={() => setConfirming(true)}>

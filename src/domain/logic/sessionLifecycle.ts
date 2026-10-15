@@ -10,12 +10,12 @@ export interface StartSessionParams {
   taskDefsById: Map<ID, TaskDef>
   /** Ordered taskDefIds to seed from when there's no routine — e.g. starting a session from a plan bucket. */
   adHocTaskDefIds?: ID[]
-  projectId?: string
+  name?: string
   now: Date
 }
 
 export function startSession(params: StartSessionParams): Session {
-  const { routine, taskDefsById, adHocTaskDefIds, projectId, now } = params
+  const { routine, taskDefsById, adHocTaskDefIds, name, now } = params
   const nowISOTime: ISODateTimeString = now.toISOString()
 
   const sourceTaskDefIds = routine
@@ -45,8 +45,8 @@ export function startSession(params: StartSessionParams): Session {
 
   return {
     id: newId(),
+    name,
     routineId: routine?.id,
-    projectId,
     hobbyIds,
     skillIds,
     taskEntries,
@@ -75,6 +75,11 @@ export function toggleTask(session: Session, entryId: ID, now: Date = new Date()
 
 export function skipTask(session: Session, entryId: ID): Session {
   return updateEntry(session, entryId, { status: 'skipped' })
+}
+
+/** Renames this session's snapshot of a task; the library task is untouched. */
+export function renameTask(session: Session, entryId: ID, label: string): Session {
+  return updateEntry(session, entryId, { label })
 }
 
 /** Sets a task entry to an explicit status, rather than toggling between two. */

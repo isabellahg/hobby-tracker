@@ -1,14 +1,9 @@
 import { computeDayMarks } from '../../logic/dayMark'
 import { computeWeekStreak } from '../../logic/weekStreak'
-import { hobbyRepo, projectRepo, recordRepo, sessionRepo, skillRepo } from '../../../storage/repositories'
+import { hobbyRepo, recordRepo, sessionRepo, skillRepo } from '../../../storage/repositories'
 import type { ChangedRecord } from '../envelope'
 import type { OperationContext } from '../context'
-import type {
-  queryCalendarSchema,
-  queryHistorySchema,
-  queryProgressSchema,
-  queryProjectsSchema,
-} from '../validate/query'
+import type { queryCalendarSchema, queryHistorySchema, queryProgressSchema } from '../validate/query'
 import type { z } from 'zod'
 
 export async function handleQueryCalendar(
@@ -65,12 +60,4 @@ export async function handleQueryProgress(
       skills,
     },
   }
-}
-
-export async function handleQueryProjects(
-  payload: z.infer<typeof queryProjectsSchema>,
-): Promise<{ changes: ChangedRecord[]; summary: string; data: unknown }> {
-  let projects = await projectRepo.getAll()
-  if (payload.status) projects = projects.filter((p) => p.status === payload.status)
-  return { changes: [], summary: `${projects.length} project(s) matched`, data: { projects } }
 }

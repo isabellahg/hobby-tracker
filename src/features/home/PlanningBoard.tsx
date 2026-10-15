@@ -2,10 +2,16 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '../../state/store'
 import { run } from '../../state/actions'
+import { countSessionsForTask } from '../../domain/logic/taskProgress'
 import { TaskTagPicker } from '../../components/TaskTagPicker'
+import { kindLabel as kindName } from '../../components/taskKinds'
+import { TaskEditor } from '../../components/TaskEditor'
+import { InlineEdit } from '../../components/InlineEdit'
+import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { EmptyState } from '../../components/EmptyState'
 import { Chip } from '../../components/Chip'
 import type { PlanBucket } from '../../domain/types/planBucket'
+import type { TaskDef, TaskKind } from '../../domain/types/taskDef'
 
 interface DragPayload {
   taskDefId: string
@@ -25,25 +31,37 @@ function readDragPayload(e: React.DragEvent): DragPayload | null {
   }
 }
 
+function kindLabel(kind: TaskKind): string {
+  return kindName(kind).toLowerCase()
+}
+
+function startDrag(e: React.DragEvent, payload: DragPayload) {
+  e.dataTransfer.setData(DRAG_MIME, JSON.stringify(payload))
+  e.dataTransfer.effectAllowed = 'move'
+}
+
 export function PlanningBoard() {
   const navigate = useNavigate()
   const allTaskDefs = useAppStore((s) => s.taskDefs)
   const allHobbies = useAppStore((s) => s.hobbies)
   const allSkills = useAppStore((s) => s.skills)
   const buckets = useAppStore((s) => s.planBuckets)
+  const sessions = useAppStore((s) => s.sessions)
 
   const taskDefs = allTaskDefs.filter((t) => !t.archived)
   const hobbies = allHobbies.filter((h) => !h.archived)
   const skills = allSkills.filter((sk) => !sk.archived)
   const taskDefById = new Map(taskDefs.map((t) => [t.id, t]))
-  const hobbyById = new Map(hobbies.map((h) => [h.id, h]))
-  const skillById = new Map(skills.map((s) => [s.id, s]))
+  const hobbyById = new Map(allHobbies.map((h) => [h.id, h]))
+  const skillById = new Map(allSkills.map((s) => [s.id, s]))
 
   const [label, setLabel] = useState('')
   const [hobbyIds, setHobbyIds] = useState<string[]>([])
   const [skillIds, setSkillIds] = useState<string[]>([])
-  const [isRecurring, setIsRecurring] = useState(false)
+  const [kind, setKind] = useState<TaskKind>('once')
   const [newBucketName, setNewBucketName] = useState('')
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
+  const [finishingTask, setFinishingTask] = useState<TaskDef | null>(null)
 
   function toggleHobby(id: string) {
     setHobbyIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]))
@@ -56,12 +74,12 @@ export function PlanningBoard() {
     if (!label.trim()) return
     await run({
       operation: 'taskDef.create',
-      payload: { label: label.trim(), hobbyIds, skillIds, isRecurring },
+      payload: { label: label.trim(), hobbyIds, skillIds, kind },
     })
     setLabel('')
     setHobbyIds([])
     setSkillIds([])
-    setIsRecurring(false)
+    setKind('once')
   }
 
   async function createBucket() {
@@ -73,6 +91,11 @@ export function PlanningBoard() {
   async function startBucket(bucketId: string) {
     const result = await run({ operation: 'session.startFromBucket', payload: { bucketId } })
     if (result.success && result.changes[0]) navigate(`/session/${result.changes[0].id}`)
+  }
+
+  async function finishTask(task: TaskDef) {
+    await run({ operation: 'taskDef.finish', payload: { id: task.id } })
+    setFinishingTask(null)
   }
 
   function moveTask(payload: DragPayload, targetBucketId: string) {
@@ -123,29 +146,103 @@ export function PlanningBoard() {
     })
   }
 
-  function taskCard(taskId: string, sourceBucketId: string | null) {
-    const task = taskDefById.get(taskId)
-    if (!task) return null
+  function tagChips(task: TaskDef) {
+    return (
+      <>
+        <Chip>{kindLabel(task.kind)}</Chip>
+        {task.hobbyIds.map((id) => (
+          <Chip key={id}>{hobbyById.get(id)?.name ?? '?'}</Chip>
+        ))}
+        {task.skillIds.map((id) => (
+          <Chip key={id}>{skillById.get(id)?.name ?? '?'}</Chip>
+        ))}
+      </>
+    )
+  }
+
+  function backlogCard(task: TaskDef) {
+    if (editingTaskId === task.id) {
+      return (
+        <div key={task.id} className="card" style={{ padding: '0.75rem' }}>
+          <TaskEditor task={task} onDone={() => setEditingTaskId(null)} />
+        </div>
+      )
+    }
+    const sessionCount = task.kind === 'ongoing' ? countSessionsForTask(sessions, task.id) : 0
     return (
       <div
-        key={taskId}
+        key={task.id}
         draggable
-        onDragStart={(e) => {
-          e.dataTransfer.setData(DRAG_MIME, JSON.stringify({ taskDefId: taskId, sourceBucketId }))
-          e.dataTransfer.effectAllowed = 'move'
-        }}
+        onDragStart={(e) => startDrag(e, { taskDefId: task.id, sourceBucketId: null })}
+        className="card stack"
+        style={{ padding: '0.5rem 0.75rem', cursor: 'grab', gap: '0.35rem' }}
+      >
+        <div className="row" style={{ justifyContent: 'space-between' }}>
+          <span>{task.label}</span>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label={`Edit ${task.label}`}
+            title="Edit"
+            onClick={() => setEditingTaskId(task.id)}
+          >
+            ✎
+          </button>
+        </div>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          {tagChips(task)}
+          {task.kind === 'ongoing' && (
+            <span className="muted" style={{ fontSize: '0.78rem' }}>
+              {sessionCount} session{sessionCount === 1 ? '' : 's'}
+            </span>
+          )}
+        </div>
+        {task.kind === 'ongoing' && (
+          <>
+            <div className="row" style={{ fontSize: '0.85rem' }}>
+              <span className="muted">Next:</span>
+              <InlineEdit
+                value={task.nextAction ?? ''}
+                placeholder="set a next action"
+                ariaLabel={`Next action for ${task.label}`}
+                onSave={(nextAction) => run({ operation: 'taskDef.update', payload: { id: task.id, nextAction } })}
+              />
+            </div>
+            <div>
+              <button type="button" className="btn" onClick={() => setFinishingTask(task)}>
+                ✓ Mark finished
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    )
+  }
+
+  function bucketCard(task: TaskDef, bucket: PlanBucket) {
+    return (
+      <div
+        draggable
+        onDragStart={(e) => startDrag(e, { taskDefId: task.id, sourceBucketId: bucket.id })}
         className="card"
         style={{ padding: '0.5rem 0.75rem', cursor: 'grab' }}
       >
-        <div>{task.label}</div>
+        <div className="row" style={{ justifyContent: 'space-between' }}>
+          <span>{task.label}</span>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label={`Remove ${task.label} from ${bucket.name}`}
+            title="Remove from this session"
+            onClick={() =>
+              run({ operation: 'bucket.removeTask', payload: { bucketId: bucket.id, taskDefId: task.id } })
+            }
+          >
+            ×
+          </button>
+        </div>
         <div className="row" style={{ marginTop: 4, flexWrap: 'wrap' }}>
-          {task.isRecurring && <Chip>recurring</Chip>}
-          {task.hobbyIds.map((id) => (
-            <Chip key={id}>{hobbyById.get(id)?.name ?? '?'}</Chip>
-          ))}
-          {task.skillIds.map((id) => (
-            <Chip key={id}>{skillById.get(id)?.name ?? '?'}</Chip>
-          ))}
+          {tagChips(task)}
         </div>
       </div>
     )
@@ -170,6 +267,7 @@ export function PlanningBoard() {
           <div className="field">
             <input
               type="text"
+              aria-label="New backlog task"
               placeholder="What do you want to do?"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
@@ -181,10 +279,10 @@ export function PlanningBoard() {
             skills={skills}
             selectedHobbyIds={hobbyIds}
             selectedSkillIds={skillIds}
-            isRecurring={isRecurring}
+            kind={kind}
             onToggleHobby={toggleHobby}
             onToggleSkill={toggleSkill}
-            onToggleRecurring={setIsRecurring}
+            onChangeKind={setKind}
           />
           <div>
             <button type="button" className="btn btn-primary" onClick={addToBacklog}>
@@ -194,7 +292,7 @@ export function PlanningBoard() {
 
           <div className="stack" style={{ marginTop: '0.5rem' }}>
             {taskDefs.length === 0 && <EmptyState>Nothing in the backlog yet.</EmptyState>}
-            {taskDefs.map((t) => taskCard(t.id, null))}
+            {taskDefs.map((t) => backlogCard(t))}
           </div>
         </div>
 
@@ -202,6 +300,9 @@ export function PlanningBoard() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem' }}>
             {buckets.map((bucket) => {
               const orderedTaskIds = [...bucket.taskRefs].sort((a, b) => a.order - b.order).map((r) => r.taskDefId)
+              const bucketTasks = orderedTaskIds
+                .map((id) => taskDefById.get(id))
+                .filter((t): t is TaskDef => t !== undefined)
               return (
                 <div
                   key={bucket.id}
@@ -210,30 +311,25 @@ export function PlanningBoard() {
                   onDrop={(e) => handleDropOnBucket(e, bucket)}
                   style={{ alignSelf: 'start' }}
                 >
-                  <input
-                    type="text"
-                    defaultValue={bucket.name}
-                    onBlur={(e) => {
-                      const name = e.target.value.trim()
-                      if (name && name !== bucket.name) {
-                        run({ operation: 'bucket.rename', payload: { id: bucket.id, name } })
-                      }
-                    }}
-                    style={{ fontWeight: 600, border: 'none', background: 'transparent', padding: 0 }}
+                  <InlineEdit
+                    value={bucket.name}
+                    ariaLabel="Planning session name"
+                    onSave={(name) => run({ operation: 'bucket.rename', payload: { id: bucket.id, name } })}
+                    style={{ fontWeight: 600 }}
                   />
                   <div className="stack" style={{ minHeight: 40 }}>
-                    {orderedTaskIds.length === 0 && (
+                    {bucketTasks.length === 0 && (
                       <p className="muted" style={{ fontSize: '0.85rem', margin: 0 }}>
                         Drag tasks here.
                       </p>
                     )}
-                    {orderedTaskIds.map((taskId) => (
+                    {bucketTasks.map((task) => (
                       <div
-                        key={taskId}
+                        key={task.id}
                         onDragOver={(e) => e.preventDefault()}
-                        onDrop={(e) => handleDropOnBucketTask(e, bucket, taskId)}
+                        onDrop={(e) => handleDropOnBucketTask(e, bucket, task.id)}
                       >
-                        {taskCard(taskId, bucket.id)}
+                        {bucketCard(task, bucket)}
                       </div>
                     ))}
                   </div>
@@ -241,7 +337,7 @@ export function PlanningBoard() {
                     <button
                       type="button"
                       className="btn btn-primary"
-                      disabled={orderedTaskIds.length === 0}
+                      disabled={bucketTasks.length === 0}
                       onClick={() => startBucket(bucket.id)}
                     >
                       Start session
@@ -263,6 +359,7 @@ export function PlanningBoard() {
               <div className="row">
                 <input
                   type="text"
+                  aria-label="New planning session name"
                   placeholder="e.g. Tonight's drawing"
                   value={newBucketName}
                   onChange={(e) => setNewBucketName(e.target.value)}
@@ -276,6 +373,20 @@ export function PlanningBoard() {
           </div>
         </div>
       </div>
+
+      {finishingTask && (
+        <ConfirmDialog
+          title={`Finish "${finishingTask.label}"?`}
+          confirmLabel="Mark finished"
+          onConfirm={() => finishTask(finishingTask)}
+          onCancel={() => setFinishingTask(null)}
+        >
+          <p>
+            It leaves the backlog and is recorded as a milestone in Progress. You can restore it from the
+            Task Library if you change your mind.
+          </p>
+        </ConfirmDialog>
+      )}
     </div>
   )
 }

@@ -4,19 +4,25 @@ import { run } from '../../state/actions'
 import { EmptyState } from '../../components/EmptyState'
 import { Chip } from '../../components/Chip'
 import { TaskTagPicker } from '../../components/TaskTagPicker'
+import { kindLabel } from '../../components/taskKinds'
+import { TaskEditor } from '../../components/TaskEditor'
+import { ArchivedSection } from '../../components/ArchivedSection'
+import type { TaskKind } from '../../domain/types/taskDef'
 
 export function TaskLibraryScreen() {
   const allTaskDefs = useAppStore((s) => s.taskDefs)
   const allHobbies = useAppStore((s) => s.hobbies)
   const allSkills = useAppStore((s) => s.skills)
   const taskDefs = allTaskDefs.filter((t) => !t.archived)
+  const archivedTaskDefs = allTaskDefs.filter((t) => t.archived)
   const hobbies = allHobbies.filter((h) => !h.archived)
   const skills = allSkills.filter((sk) => !sk.archived)
 
   const [label, setLabel] = useState('')
   const [selectedHobbyIds, setSelectedHobbyIds] = useState<string[]>([])
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([])
-  const [isRecurring, setIsRecurring] = useState(false)
+  const [kind, setKind] = useState<TaskKind>('once')
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   function toggleHobby(id: string) {
     setSelectedHobbyIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]))
@@ -29,25 +35,20 @@ export function TaskLibraryScreen() {
     if (!label.trim()) return
     await run({
       operation: 'taskDef.create',
-      payload: {
-        label: label.trim(),
-        hobbyIds: selectedHobbyIds,
-        skillIds: selectedSkillIds,
-        isRecurring,
-      },
+      payload: { label: label.trim(), hobbyIds: selectedHobbyIds, skillIds: selectedSkillIds, kind },
     })
     setLabel('')
     setSelectedHobbyIds([])
     setSelectedSkillIds([])
-    setIsRecurring(false)
+    setKind('once')
   }
 
-  async function archiveTask(id: string) {
-    await run({ operation: 'taskDef.archive', payload: { id, archived: true } })
+  function setArchived(id: string, archived: boolean) {
+    run({ operation: 'taskDef.archive', payload: { id, archived } })
   }
 
-  const hobbyById = new Map(hobbies.map((h) => [h.id, h]))
-  const skillById = new Map(skills.map((s) => [s.id, s]))
+  const hobbyById = new Map(allHobbies.map((h) => [h.id, h]))
+  const skillById = new Map(allSkills.map((s) => [s.id, s]))
 
   return (
     <div className="stack">
@@ -55,8 +56,7 @@ export function TaskLibraryScreen() {
         <h2>Task Library</h2>
       </div>
       <p className="muted">
-        Your backlog. Build tasks here, inline while creating a routine, or from the quick-add on Home —
-        they all land in the same place.
+        Your backlog. Tasks created here, in a routine, or from Home's quick-add all land in the same place.
       </p>
 
       <div className="card stack">
@@ -76,10 +76,10 @@ export function TaskLibraryScreen() {
           skills={skills}
           selectedHobbyIds={selectedHobbyIds}
           selectedSkillIds={selectedSkillIds}
-          isRecurring={isRecurring}
+          kind={kind}
           onToggleHobby={toggleHobby}
           onToggleSkill={toggleSkill}
-          onToggleRecurring={setIsRecurring}
+          onChangeKind={setKind}
         />
         <div>
           <button type="button" className="btn btn-primary" onClick={createTask}>
@@ -91,26 +91,48 @@ export function TaskLibraryScreen() {
       {taskDefs.length === 0 && <EmptyState>No tasks yet.</EmptyState>}
 
       <div className="stack">
-        {taskDefs.map((task) => (
-          <div key={task.id} className="card row" style={{ justifyContent: 'space-between' }}>
-            <div>
-              <strong>{task.label}</strong>
-              {task.isRecurring && <span className="chip" style={{ marginLeft: 8 }}>recurring</span>}
-              <div className="row" style={{ marginTop: 4, flexWrap: 'wrap' }}>
-                {task.hobbyIds.map((id) => (
-                  <Chip key={id}>{hobbyById.get(id)?.name ?? '?'}</Chip>
-                ))}
-                {task.skillIds.map((id) => (
-                  <Chip key={id}>{skillById.get(id)?.name ?? '?'}</Chip>
-                ))}
+        {taskDefs.map((task) =>
+          editingId === task.id ? (
+            <div key={task.id} className="card">
+              <TaskEditor task={task} onDone={() => setEditingId(null)} />
+            </div>
+          ) : (
+            <div key={task.id} className="card row" style={{ justifyContent: 'space-between' }}>
+              <div>
+                <strong>{task.label}</strong>
+                <div className="row" style={{ marginTop: 4, flexWrap: 'wrap' }}>
+                  <Chip>{kindLabel(task.kind)}</Chip>
+                  {task.hobbyIds.map((id) => (
+                    <Chip key={id}>{hobbyById.get(id)?.name ?? '?'}</Chip>
+                  ))}
+                  {task.skillIds.map((id) => (
+                    <Chip key={id}>{skillById.get(id)?.name ?? '?'}</Chip>
+                  ))}
+                </div>
+                {task.kind === 'ongoing' && task.nextAction && (
+                  <div className="muted" style={{ fontSize: '0.85rem', marginTop: 4 }}>
+                    Next: {task.nextAction}
+                  </div>
+                )}
+              </div>
+              <div className="row">
+                <button type="button" className="btn" onClick={() => setEditingId(task.id)}>
+                  Edit
+                </button>
+                <button type="button" className="btn btn-danger" onClick={() => setArchived(task.id, true)}>
+                  Archive
+                </button>
               </div>
             </div>
-            <button type="button" className="btn btn-danger" onClick={() => archiveTask(task.id)}>
-              Archive
-            </button>
-          </div>
-        ))}
+          ),
+        )}
       </div>
+
+      <ArchivedSection
+        title="Archived & finished tasks"
+        items={archivedTaskDefs.map((t) => ({ id: t.id, label: t.label }))}
+        onRestore={(id) => setArchived(id, false)}
+      />
     </div>
   )
 }

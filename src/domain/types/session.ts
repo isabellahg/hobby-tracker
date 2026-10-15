@@ -16,8 +16,6 @@ export interface SessionTaskEntry {
   status: SessionTaskStatus
   order: number
   isAdHoc: boolean
-  carriedFromSessionId?: ID
-  carriedFromProjectId?: ID
   completedAt?: ISODateTimeString
 }
 
@@ -30,8 +28,9 @@ export interface PausedInterval {
 
 export interface Session {
   id: ID
+  /** User-facing name; seeded from the plan bucket it was started from. */
+  name?: string
   routineId?: ID
-  projectId?: ID
   hobbyIds: ID[]
   skillIds: ID[]
   taskEntries: SessionTaskEntry[]

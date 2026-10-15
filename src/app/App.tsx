@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { HashRouter, Route, Routes } from 'react-router-dom'
+import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { useAppStore } from '../state/store'
 import { Layout } from './Layout'
 import { HomeScreen } from '../features/home/HomeScreen'
@@ -11,8 +11,6 @@ import { WeeklyPlanEditor } from '../features/weeklyPlan/WeeklyPlanEditor'
 import { SessionRunnerScreen } from '../features/session/SessionRunnerScreen'
 import { HistoryScreen } from '../features/history/HistoryScreen'
 import { ProgressScreen } from '../features/progress/ProgressScreen'
-import { ProjectListScreen } from '../features/projects/ProjectListScreen'
-import { ProjectDetailScreen } from '../features/projects/ProjectDetailScreen'
 import { DataManagementScreen } from '../features/dataManagement/DataManagementScreen'
 import { ImportScreen } from '../features/importLLM/ImportScreen'
 import { SettingsScreen } from '../features/settings/SettingsScreen'
@@ -47,11 +45,10 @@ function App() {
           <Route path="/session/:id" element={<SessionRunnerScreen />} />
           <Route path="/history" element={<HistoryScreen />} />
           <Route path="/progress" element={<ProgressScreen />} />
-          <Route path="/projects" element={<ProjectListScreen />} />
-          <Route path="/projects/:id" element={<ProjectDetailScreen />} />
           <Route path="/data" element={<DataManagementScreen />} />
           <Route path="/import" element={<ImportScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
     </HashRouter>

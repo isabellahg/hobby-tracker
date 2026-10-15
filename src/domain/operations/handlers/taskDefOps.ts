@@ -1,10 +1,23 @@
 import { newId } from '../../types/common'
 import type { TaskDef } from '../../types/taskDef'
-import { taskDefRepo } from '../../../storage/repositories'
+import type { PersonalRecord } from '../../types/record'
+import { toISODate } from '../../logic/weekUtils'
+import { recordRepo, taskDefRepo } from '../../../storage/repositories'
 import type { ChangedRecord } from '../envelope'
 import type { OperationContext } from '../context'
-import type { taskDefArchiveSchema, taskDefCreateSchema, taskDefUpdateSchema } from '../validate/taskDef'
+import type {
+  taskDefArchiveSchema,
+  taskDefCreateSchema,
+  taskDefFinishSchema,
+  taskDefUpdateSchema,
+} from '../validate/taskDef'
 import type { z } from 'zod'
+
+const KIND_LABEL: Record<TaskDef['kind'], string> = {
+  once: 'one-off',
+  recurring: 'recurring',
+  ongoing: 'ongoing',
+}
 
 export async function handleTaskDefCreate(
   payload: z.infer<typeof taskDefCreateSchema>,
@@ -17,7 +30,8 @@ export async function handleTaskDefCreate(
     description: payload.description,
     hobbyIds: payload.hobbyIds,
     skillIds: payload.skillIds,
-    isRecurring: payload.isRecurring,
+    kind: payload.kind,
+    nextAction: payload.nextAction,
     defaultEstimateMin: payload.defaultEstimateMin,
     archived: false,
     createdAt: now,
@@ -26,7 +40,7 @@ export async function handleTaskDefCreate(
   await taskDefRepo.put(taskDef)
   return {
     changes: [{ store: 'taskDefs', id: taskDef.id, changeType: 'created', after: taskDef }],
-    summary: `Create task "${taskDef.label}"${taskDef.isRecurring ? ' (recurring)' : ''}`,
+    summary: `Create ${KIND_LABEL[taskDef.kind]} task "${taskDef.label}"`,
   }
 }
 
@@ -42,7 +56,8 @@ export async function handleTaskDefUpdate(
     description: payload.description ?? existing.description,
     hobbyIds: payload.hobbyIds ?? existing.hobbyIds,
     skillIds: payload.skillIds ?? existing.skillIds,
-    isRecurring: payload.isRecurring ?? existing.isRecurring,
+    kind: payload.kind ?? existing.kind,
+    nextAction: payload.nextAction ?? existing.nextAction,
     defaultEstimateMin: payload.defaultEstimateMin ?? existing.defaultEstimateMin,
     updatedAt: ctx.now.toISOString(),
   }
@@ -63,6 +78,38 @@ export async function handleTaskDefArchive(
   await taskDefRepo.put(updated)
   return {
     changes: [{ store: 'taskDefs', id: updated.id, changeType: 'updated', before: existing, after: updated }],
-    summary: `${payload.archived ? 'Archive' : 'Unarchive'} task "${updated.label}"`,
+    summary: `${payload.archived ? 'Archive' : 'Restore'} task "${updated.label}"`,
+  }
+}
+
+/** Completes an ongoing task for good: archives it and records a milestone. */
+export async function handleTaskDefFinish(
+  payload: z.infer<typeof taskDefFinishSchema>,
+  ctx: OperationContext,
+): Promise<{ changes: ChangedRecord[]; summary: string }> {
+  const existing = await taskDefRepo.getById(payload.id)
+  if (!existing) throw new Error(`Task ${payload.id} not found`)
+  if (existing.kind !== 'ongoing') throw new Error(`"${existing.label}" is not an ongoing task`)
+  if (existing.archived) throw new Error(`"${existing.label}" is already finished or archived`)
+
+  const now = ctx.now.toISOString()
+  const finished: TaskDef = { ...existing, archived: true, updatedAt: now }
+  const record: PersonalRecord = {
+    id: newId(),
+    hobbyId: existing.hobbyIds[0],
+    skillId: existing.skillIds[0],
+    date: payload.date ?? toISODate(ctx.now),
+    description: `Finished "${existing.label}"`,
+    taskDefId: existing.id,
+    createdAt: now,
+  }
+  await taskDefRepo.put(finished)
+  await recordRepo.put(record)
+  return {
+    changes: [
+      { store: 'taskDefs', id: finished.id, changeType: 'updated', before: existing, after: finished },
+      { store: 'personalRecords', id: record.id, changeType: 'created', after: record },
+    ],
+    summary: `Finish "${existing.label}" and record it as a milestone`,
   }
 }

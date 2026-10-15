@@ -16,7 +16,6 @@ type ListKey = Extract<
   | 'taskDefs'
   | 'routines'
   | 'sessions'
-  | 'projects'
   | 'personalRecords'
   | 'planBuckets'
 >
@@ -27,7 +26,6 @@ const STORE_TO_LIST_KEY: Record<string, ListKey> = {
   taskDefs: 'taskDefs',
   routines: 'routines',
   sessions: 'sessions',
-  projects: 'projects',
   personalRecords: 'personalRecords',
   planBuckets: 'planBuckets',
 }

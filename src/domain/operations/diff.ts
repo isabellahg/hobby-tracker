@@ -14,7 +14,6 @@ const SINGULAR_BY_STORE: Record<string, string> = {
   routines: 'routine',
   weeklyPlan: 'weekly plan',
   sessions: 'session',
-  projects: 'project',
   personalRecords: 'milestone',
   planBuckets: 'plan bucket',
 }

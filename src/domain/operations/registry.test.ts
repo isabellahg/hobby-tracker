@@ -296,41 +296,25 @@ describe('plan buckets and session.startFromBucket', () => {
     expect(taskDef?.archived).toBe(false)
   })
 
-  it('starting a bucket archives a one-off task but keeps a recurring one active, and deletes the bucket', async () => {
+  it('starting a bucket names the session after it, archives nothing, and deletes the bucket', async () => {
     const ctx = makeContext({ now: new Date('2026-10-14T19:00:00.000Z') })
-    const oneOff = await applyOperation(
-      { operation: 'taskDef.create', payload: { label: 'One-off', isRecurring: false } },
-      ctx,
-    )
-    const recurring = await applyOperation(
-      { operation: 'taskDef.create', payload: { label: 'Habit', isRecurring: true } },
-      ctx,
-    )
+    const oneOff = await createTask('One-off', 'once', ctx)
+    const recurring = await createTask('Habit', 'recurring', ctx)
     const bucket = await applyOperation(
-      {
-        operation: 'bucket.create',
-        payload: { name: 'Tonight', taskDefIds: [oneOff.changes[0].id, recurring.changes[0].id] },
-      },
+      { operation: 'bucket.create', payload: { name: 'Tonight', taskDefIds: [oneOff, recurring] } },
       ctx,
     )
     const bucketId = bucket.changes[0].id
 
-    const started = await applyOperation(
-      { operation: 'session.startFromBucket', payload: { bucketId } },
-      ctx,
-    )
+    const started = await applyOperation({ operation: 'session.startFromBucket', payload: { bucketId } }, ctx)
     expect(started.success).toBe(true)
 
     const sessionId = started.changes.find((c) => c.store === 'sessions')!.id
     const session = await db.sessions.get(sessionId)
+    expect(session?.name).toBe('Tonight')
     expect(session?.taskEntries.map((e) => e.label).sort()).toEqual(['Habit', 'One-off'])
     expect(session?.routineId).toBeUndefined()
-
-    const oneOffAfter = await db.taskDefs.get(oneOff.changes[0].id)
-    const recurringAfter = await db.taskDefs.get(recurring.changes[0].id)
-    expect(oneOffAfter?.archived).toBe(true)
-    expect(recurringAfter?.archived).toBe(false)
-
+    expect((await db.taskDefs.get(oneOff))?.archived).toBe(false)
     expect(await db.planBuckets.get(bucketId)).toBeUndefined()
   })
 
@@ -351,5 +335,146 @@ describe('plan buckets and session.startFromBucket', () => {
     const sessionId = started.changes.find((c) => c.store === 'sessions')!.id
     const session = await db.sessions.get(sessionId)
     expect(session?.dateKey).toBe('2026-10-13')
+  })
+})
+
+async function createTask(label: string, kind: 'once' | 'recurring' | 'ongoing', ctx = makeContext()) {
+  const res = await applyOperation({ operation: 'taskDef.create', payload: { label, kind } }, ctx)
+  return res.changes[0].id
+}
+
+/** Starts a bucket session with the given tasks, completes the listed labels, and finishes it. */
+async function runBucketSession(taskDefIds: string[], completeLabels: string[], ctx = makeContext()) {
+  const bucket = await applyOperation({ operation: 'bucket.create', payload: { name: 'B', taskDefIds } }, ctx)
+  const started = await applyOperation(
+    { operation: 'session.startFromBucket', payload: { bucketId: bucket.changes[0].id } },
+    ctx,
+  )
+  const sessionId = started.changes.find((c) => c.store === 'sessions')!.id
+  for (const label of completeLabels) {
+    await applyOperation({ operation: 'session.setTaskStatus', payload: { sessionId, label, status: 'completed' } }, ctx)
+  }
+  await applyOperation({ operation: 'session.finish', payload: { sessionId } }, ctx)
+  return sessionId
+}
+
+describe('task kinds leaving the backlog', () => {
+  it('a one-off completed in a bucket session is archived on finish', async () => {
+    const id = await createTask('Study artworks', 'once')
+    await runBucketSession([id], ['Study artworks'])
+    expect((await db.taskDefs.get(id))?.archived).toBe(true)
+  })
+
+  it('a one-off left unchecked stays in the backlog', async () => {
+    const id = await createTask('Not today', 'once')
+    await runBucketSession([id], [])
+    expect((await db.taskDefs.get(id))?.archived).toBe(false)
+  })
+
+  it('a one-off completed in a routine session stays, since routine tasks repeat', async () => {
+    const ctx = makeContext()
+    const id = await createTask('Routine step', 'once', ctx)
+    const routine = await applyOperation(
+      { operation: 'routine.create', payload: { name: 'R', taskDefIds: [id] } },
+      ctx,
+    )
+    const started = await applyOperation(
+      { operation: 'session.start', payload: { routineId: routine.changes[0].id } },
+      ctx,
+    )
+    const sessionId = started.changes[0].id
+    await applyOperation(
+      { operation: 'session.setTaskStatus', payload: { sessionId, label: 'Routine step', status: 'completed' } },
+      ctx,
+    )
+    await applyOperation({ operation: 'session.finish', payload: { sessionId } }, ctx)
+    expect((await db.taskDefs.get(id))?.archived).toBe(false)
+  })
+
+  it('recurring and ongoing tasks are never auto-archived, even when completed', async () => {
+    const habit = await createTask('Habit', 'recurring')
+    const course = await createTask('Course', 'ongoing')
+    await runBucketSession([habit, course], ['Habit', 'Course'])
+    expect((await db.taskDefs.get(habit))?.archived).toBe(false)
+    expect((await db.taskDefs.get(course))?.archived).toBe(false)
+  })
+
+  it('taskDef.finish archives an ongoing task and records a linked milestone', async () => {
+    const ctx = makeContext({ now: new Date('2026-10-14T12:00:00') })
+    const course = await createTask('Anatomy course', 'ongoing', ctx)
+    const result = await applyOperation({ operation: 'taskDef.finish', payload: { id: course } }, ctx)
+    expect(result.success).toBe(true)
+    expect((await db.taskDefs.get(course))?.archived).toBe(true)
+    const records = await db.personalRecords.toArray()
+    expect(records).toHaveLength(1)
+    expect(records[0].taskDefId).toBe(course)
+    expect(records[0].description).toBe('Finished "Anatomy course"')
+    expect(records[0].date).toBe('2026-10-14')
+  })
+
+  it('taskDef.finish refuses a non-ongoing task', async () => {
+    const id = await createTask('One-off', 'once')
+    const result = await applyOperation({ operation: 'taskDef.finish', payload: { id } }, makeContext())
+    expect(result.success).toBe(false)
+  })
+
+  it('restoring an archived task brings it back', async () => {
+    const id = await createTask('Archived', 'once')
+    await applyOperation({ operation: 'taskDef.archive', payload: { id, archived: true } }, makeContext())
+    await applyOperation({ operation: 'taskDef.archive', payload: { id, archived: false } }, makeContext())
+    expect((await db.taskDefs.get(id))?.archived).toBe(false)
+  })
+
+  it('a task can be switched from one-off to recurring after creation', async () => {
+    const id = await createTask('artwod practice', 'once')
+    await applyOperation({ operation: 'taskDef.update', payload: { id, kind: 'recurring' } }, makeContext())
+    expect((await db.taskDefs.get(id))?.kind).toBe('recurring')
+  })
+})
+
+describe('session rename, renameTask, and delete', () => {
+  it('renames a session and one of its task entries without touching the library task', async () => {
+    const ctx = makeContext()
+    const id = await createTask('Sketch', 'recurring', ctx)
+    const sessionId = await runBucketSession([id], [], ctx)
+
+    await applyOperation({ operation: 'session.rename', payload: { sessionId, name: 'Evening sketching' } }, ctx)
+    const entryId = (await db.sessions.get(sessionId))!.taskEntries[0].id
+    await applyOperation(
+      { operation: 'session.renameTask', payload: { sessionId, entryId, label: 'Gesture sketch' } },
+      ctx,
+    )
+
+    const session = await db.sessions.get(sessionId)
+    expect(session?.name).toBe('Evening sketching')
+    expect(session?.taskEntries[0].label).toBe('Gesture sketch')
+    expect((await db.taskDefs.get(id))?.label).toBe('Sketch')
+  })
+
+  it('deleting the only session of a day removes that day\'s mark', async () => {
+    const ctx = makeContext({ now: new Date('2026-10-14T12:00:00') })
+    const start = await applyOperation({ operation: 'session.start', payload: {} }, ctx)
+    const sessionId = start.changes[0].id
+    await applyOperation({ operation: 'session.finish', payload: { sessionId } }, ctx)
+
+    const deleted = await applyOperation({ operation: 'session.delete', payload: { sessionId } }, ctx)
+    expect(deleted.success).toBe(true)
+
+    const calendar = await applyOperation(
+      { operation: 'query.calendar', payload: { start: '2026-10-14', end: '2026-10-14' } },
+      ctx,
+    )
+    const data = calendar.data as { marks: { hasMark: boolean }[] }
+    expect(data.marks[0].hasMark).toBe(false)
+  })
+
+  it('refuses to delete a session that is still in progress', async () => {
+    const start = await applyOperation({ operation: 'session.start', payload: {} }, makeContext())
+    const result = await applyOperation(
+      { operation: 'session.delete', payload: { sessionId: start.changes[0].id } },
+      makeContext(),
+    )
+    expect(result.success).toBe(false)
+    expect(await db.sessions.get(start.changes[0].id)).toBeDefined()
   })
 })

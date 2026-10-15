@@ -8,12 +8,15 @@ import { DraggableList } from '../../components/DraggableList'
 import { DurationTimer } from '../../components/DurationTimer'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { EmptyState } from '../../components/EmptyState'
+import { InlineEdit } from '../../components/InlineEdit'
 import { SessionSummaryCard } from './SessionSummaryCard'
+import { sessionTitle } from './sessionTitle'
 
 export function SessionRunnerScreen() {
   const { id } = useParams()
   const navigate = useNavigate()
   const session = useAppStore((s) => s.sessions.find((x) => x.id === id))
+  const routines = useAppStore((s) => s.routines)
   const [adHocLabel, setAdHocLabel] = useState('')
   const [confirmingDiscard, setConfirmingDiscard] = useState(false)
 
@@ -70,7 +73,18 @@ export function SessionRunnerScreen() {
   return (
     <div className="stack">
       <div className="page-header">
-        <h2>Session in progress</h2>
+        <div>
+          <div className="muted" style={{ fontSize: '0.85rem' }}>
+            Session in progress
+          </div>
+          <h2 style={{ margin: 0 }}>
+            <InlineEdit
+              value={sessionTitle(session, routines)}
+              ariaLabel="Session name"
+              onSave={(name) => run({ operation: 'session.rename', payload: { sessionId: session.id, name } })}
+            />
+          </h2>
+        </div>
         <div className="row">
           <span className="chip">
             <DurationTimer startedAt={session.startedAt} pausedSec={pausedSec} isPaused={isPaused} />
@@ -98,23 +112,24 @@ export function SessionRunnerScreen() {
               opacity: entry.status === 'skipped' ? 0.5 : 1,
             }}
           >
-            <label className="row" style={{ gap: '0.6rem', flex: 1 }}>
+            <div className="row" style={{ gap: '0.6rem', flex: 1 }}>
               <input
                 type="checkbox"
+                aria-label={`Done: ${entry.label}`}
                 checked={entry.status === 'completed'}
                 disabled={entry.status === 'skipped'}
                 onChange={() => toggle(entry.id)}
               />
-              <span
-                style={{
-                  textDecoration: entry.status === 'completed' ? 'line-through' : undefined,
-                }}
-              >
-                {entry.label}
-              </span>
+              <InlineEdit
+                value={entry.label}
+                ariaLabel="Task name"
+                onSave={(label) =>
+                  run({ operation: 'session.renameTask', payload: { sessionId: session.id, entryId: entry.id, label } })
+                }
+                style={{ textDecoration: entry.status === 'completed' ? 'line-through' : undefined }}
+              />
               {entry.isAdHoc && <span className="chip">ad-hoc</span>}
-              {entry.carriedFromSessionId && <span className="chip">carried forward</span>}
-            </label>
+            </div>
             {entry.status !== 'skipped' && (
               <button type="button" className="btn" onClick={() => skip(entry.id)}>
                 Skip

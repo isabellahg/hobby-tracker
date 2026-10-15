@@ -17,8 +17,8 @@ const NOW = new Date('2026-10-13T10:00:00.000Z')
 
 function makeRoutine(): { routine: Routine; taskDefsById: Map<string, TaskDef> } {
   const defs: TaskDef[] = [
-    { id: 'td1', label: 'Reference gathering', hobbyIds: [], skillIds: ['s1'], isRecurring: false, archived: false, createdAt: '', updatedAt: '' },
-    { id: 'td2', label: 'Sketch', hobbyIds: [], skillIds: ['s1', 's2'], isRecurring: false, archived: false, createdAt: '', updatedAt: '' },
+    { id: 'td1', label: 'Reference gathering', hobbyIds: [], skillIds: ['s1'], kind: 'once', archived: false, createdAt: '', updatedAt: '' },
+    { id: 'td2', label: 'Sketch', hobbyIds: [], skillIds: ['s1', 's2'], kind: 'once', archived: false, createdAt: '', updatedAt: '' },
   ]
   const routine: Routine = {
     id: 'r1',

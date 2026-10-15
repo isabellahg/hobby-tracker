@@ -1,7 +1,11 @@
 import { useMemo, useState } from 'react'
 import { useAppStore } from '../../state/store'
+import { run } from '../../state/actions'
 import { EmptyState } from '../../components/EmptyState'
 import { Chip } from '../../components/Chip'
+import { InlineEdit } from '../../components/InlineEdit'
+import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { sessionTitle } from '../session/sessionTitle'
 
 export function HistoryScreen() {
   const sessions = useAppStore((s) => s.sessions)
@@ -15,6 +19,8 @@ export function HistoryScreen() {
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const deletingSession = deletingId ? sessions.find((s) => s.id === deletingId) : undefined
 
   const filtered = useMemo(() => {
     return sessions
@@ -27,7 +33,6 @@ export function HistoryScreen() {
       .sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1))
   }, [sessions, routineId, hobbyId, skillId, start, end])
 
-  const routineById = new Map(routines.map((r) => [r.id, r]))
   const hobbyById = new Map(hobbies.map((h) => [h.id, h]))
   const skillById = new Map(skills.map((s) => [s.id, s]))
 
@@ -90,19 +95,19 @@ export function HistoryScreen() {
           const isExpanded = expandedId === s.id
           return (
             <div key={s.id} className="card stack">
-              <div
-                className="row"
-                style={{ justifyContent: 'space-between', cursor: 'pointer' }}
-                onClick={() => setExpandedId(isExpanded ? null : s.id)}
-              >
-                <div>
-                  <strong>{s.dateKey}</strong>{' '}
+              <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                <div className="row" style={{ flexWrap: 'wrap' }}>
+                  <strong>{s.dateKey}</strong>
+                  <InlineEdit
+                    value={sessionTitle(s, routines)}
+                    ariaLabel="Session name"
+                    onSave={(name) => run({ operation: 'session.rename', payload: { sessionId: s.id, name } })}
+                  />
                   {s.state === 'discarded' ? (
                     <span className="muted">(discarded)</span>
                   ) : (
                     <span className="muted">
-                      {s.routineId ? routineById.get(s.routineId)?.name ?? 'Routine' : 'Flexible session'} ·{' '}
-                      {completed.length}/{s.taskEntries.length} tasks
+                      · {completed.length}/{s.taskEntries.length} tasks
                     </span>
                   )}
                 </div>
@@ -113,10 +118,18 @@ export function HistoryScreen() {
                   {s.skillIds.map((id) => (
                     <Chip key={id}>{skillById.get(id)?.name ?? '?'}</Chip>
                   ))}
+                  <button
+                    type="button"
+                    className="btn"
+                    aria-expanded={isExpanded}
+                    onClick={() => setExpandedId(isExpanded ? null : s.id)}
+                  >
+                    {isExpanded ? 'Hide' : 'Details'}
+                  </button>
                 </div>
               </div>
-              {isExpanded && s.state === 'finished' && (
-                <div className="row" style={{ alignItems: 'flex-start', gap: '2rem' }}>
+              {isExpanded && (
+                <div className="row" style={{ alignItems: 'flex-start', gap: '2rem', flexWrap: 'wrap' }}>
                   <div>
                     <div className="muted">Completed</div>
                     <ul style={{ margin: 0 }}>
@@ -141,12 +154,35 @@ export function HistoryScreen() {
                       {Math.round(s.durationSec / 60)} min
                     </div>
                   )}
+                  <div style={{ marginLeft: 'auto' }}>
+                    <button type="button" className="btn btn-danger" onClick={() => setDeletingId(s.id)}>
+                      Delete session
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
           )
         })}
       </div>
+
+      {deletingSession && (
+        <ConfirmDialog
+          title="Delete this session?"
+          confirmLabel="Delete"
+          danger
+          onConfirm={async () => {
+            await run({ operation: 'session.delete', payload: { sessionId: deletingSession.id } })
+            setDeletingId(null)
+          }}
+          onCancel={() => setDeletingId(null)}
+        >
+          <p>
+            "{sessionTitle(deletingSession, routines)}" on {deletingSession.dateKey} will be removed for good. If it
+            was the only session that day, the day loses its activity mark.
+          </p>
+        </ConfirmDialog>
+      )}
     </div>
   )
 }

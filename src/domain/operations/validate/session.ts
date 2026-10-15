@@ -2,7 +2,6 @@ import { z } from 'zod'
 
 export const sessionStartSchema = z.object({
   routineId: z.string().optional(),
-  projectId: z.string().optional(),
   /** Backdates the session (e.g. logging a session from yesterday). Defaults to now. */
   occurredAt: z.string().optional(),
 })
@@ -44,4 +43,15 @@ export const sessionFinishSchema = z.object({
 export const sessionStartFromBucketSchema = z.object({
   bucketId: z.string().min(1),
   occurredAt: z.string().optional(),
+})
+
+export const sessionRenameSchema = z.object({
+  sessionId: z.string().min(1),
+  name: z.string().min(1),
+})
+
+export const sessionRenameTaskSchema = z.object({
+  sessionId: z.string().min(1),
+  entryId: z.string().min(1),
+  label: z.string().min(1),
 })

@@ -17,7 +17,3 @@ export const queryProgressSchema = z.object({
   hobbyId: z.string().optional(),
   skillId: z.string().optional(),
 })
-
-export const queryProjectsSchema = z.object({
-  status: z.enum(['active', 'completed', 'archived']).optional(),
-})
