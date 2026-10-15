@@ -20,6 +20,7 @@ export type OperationName =
   | 'session.skipTask'
   | 'session.setTaskStatus'
   | 'session.addAdHocTask'
+  | 'session.addSubtask'
   | 'session.reorderTasks'
   | 'session.pause'
   | 'session.resume'

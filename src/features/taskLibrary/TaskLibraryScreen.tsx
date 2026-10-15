@@ -7,6 +7,8 @@ import { TaskTagPicker } from '../../components/TaskTagPicker'
 import { kindLabel } from '../../components/taskKinds'
 import { TaskEditor } from '../../components/TaskEditor'
 import { ArchivedSection } from '../../components/ArchivedSection'
+import { Subtasks } from '../../components/Subtasks'
+import { isTreeRoot } from '../../domain/logic/taskTree'
 import type { TaskKind } from '../../domain/types/taskDef'
 
 export function TaskLibraryScreen() {
@@ -15,6 +17,8 @@ export function TaskLibraryScreen() {
   const allSkills = useAppStore((s) => s.skills)
   const taskDefs = allTaskDefs.filter((t) => !t.archived)
   const archivedTaskDefs = allTaskDefs.filter((t) => t.archived)
+  const openIds = new Set(taskDefs.map((t) => t.id))
+  const rootTasks = taskDefs.filter((t) => isTreeRoot(t, openIds))
   const hobbies = allHobbies.filter((h) => !h.archived)
   const skills = allSkills.filter((sk) => !sk.archived)
 
@@ -94,14 +98,14 @@ export function TaskLibraryScreen() {
       {taskDefs.length === 0 && <EmptyState>No tasks yet.</EmptyState>}
 
       <div className="stack stack-sm">
-        {taskDefs.map((task) =>
+        {rootTasks.map((task) =>
           editingId === task.id ? (
             <div key={task.id} className="card">
               <TaskEditor task={task} onDone={() => setEditingId(null)} />
             </div>
           ) : (
-            <div key={task.id} className="card card-tight row row-between">
-              <div>
+            <div key={task.id} className="card card-tight row row-between row-top">
+              <div className="grow">
                 <span className="strong">{task.label}</span>
                 <div className="row wrap">
                   <Chip>{kindLabel(task.kind)}</Chip>
@@ -117,6 +121,7 @@ export function TaskLibraryScreen() {
                     Next: {task.nextAction}
                   </div>
                 )}
+                <Subtasks task={task} allTasks={allTaskDefs} />
               </div>
               <div className="row">
                 <button type="button" className="btn" onClick={() => setEditingId(task.id)}>

@@ -9,6 +9,8 @@ import { DurationTimer } from '../../components/DurationTimer'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { EmptyState } from '../../components/EmptyState'
 import { InlineEdit } from '../../components/InlineEdit'
+import { ChildMeter, SubtaskQuickAdd } from '../../components/Subtasks'
+import type { SessionTaskEntry } from '../../domain/types/session'
 import { SessionSummaryCard } from './SessionSummaryCard'
 import { sessionTitle } from './sessionTitle'
 
@@ -19,6 +21,8 @@ export function SessionRunnerScreen() {
   const routines = useAppStore((s) => s.routines)
   const [adHocLabel, setAdHocLabel] = useState('')
   const [confirmingDiscard, setConfirmingDiscard] = useState(false)
+  /** Entry currently showing the "split into subtasks" input. */
+  const [splittingEntryId, setSplittingEntryId] = useState<string | null>(null)
 
   if (!session) {
     return <EmptyState>Session not found.</EmptyState>
@@ -40,6 +44,14 @@ export function SessionRunnerScreen() {
   }
 
   const completed = session.taskEntries.filter((e) => e.status === 'completed').length
+  const entryIds = new Set(session.taskEntries.map((e) => e.id))
+  const topEntries = session.taskEntries.filter((e) => !e.parentEntryId || !entryIds.has(e.parentEntryId))
+  const childEntries = (parentId: string) =>
+    session.taskEntries.filter((e) => e.parentEntryId === parentId).sort((a, b) => a.order - b.order)
+  const childMeter = (parentId: string) => {
+    const counted = childEntries(parentId).filter((e) => e.status !== 'skipped')
+    return <ChildMeter done={counted.filter((e) => e.status === 'completed').length} total={counted.length} />
+  }
   const isPaused = session.pausedIntervals.some((p) => !p.resumedAt)
   const pausedSec = Math.floor(totalPausedMs(session, new Date()) / 1000)
 
@@ -55,6 +67,9 @@ export function SessionRunnerScreen() {
     await run({ operation: 'session.addAdHocTask', payload: { sessionId: session!.id, label, skillIds: [] } })
     setAdHocLabel('')
   }
+  async function addSubtask(parentEntryId: string, label: string) {
+    await run({ operation: 'session.addSubtask', payload: { sessionId: session!.id, parentEntryId, label } })
+  }
   async function reorder(orderedEntryIds: string[]) {
     await run({ operation: 'session.reorderTasks', payload: { sessionId: session!.id, orderedEntryIds } })
   }
@@ -68,6 +83,78 @@ export function SessionRunnerScreen() {
     await run({ operation: 'session.discard', payload: { sessionId: session!.id } })
     setConfirmingDiscard(false)
     navigate('/')
+  }
+
+  function entryCheckbox(entry: SessionTaskEntry) {
+    return (
+      <input
+        type="checkbox"
+        aria-label={`Done: ${entry.label}`}
+        checked={entry.status === 'completed'}
+        disabled={entry.status === 'skipped'}
+        onChange={() => toggle(entry.id)}
+      />
+    )
+  }
+
+  function entryLabel(entry: SessionTaskEntry, extraClass = '') {
+    return (
+      <InlineEdit
+        value={entry.label}
+        ariaLabel="Task name"
+        onSave={(label) =>
+          run({ operation: 'session.renameTask', payload: { sessionId: session!.id, entryId: entry.id, label } })
+        }
+        className={`${extraClass}${entry.status === 'completed' ? ' is-done' : ''}`.trim() || undefined}
+      />
+    )
+  }
+
+  /** Subtask entries nested under `entry`, plus the quick-add input while splitting it. */
+  function subtree(entry: SessionTaskEntry) {
+    const children = childEntries(entry.id)
+    if (children.length === 0 && splittingEntryId !== entry.id) return null
+    return (
+      <ul className="subtree">
+        {children.map((child) => (
+          <li key={child.id} className={child.status === 'skipped' ? 'is-skipped' : undefined}>
+            <div className="subtask-row">
+              {entryCheckbox(child)}
+              {entryLabel(child, 'grow')}
+              {childMeter(child.id)}
+              {child.status !== 'skipped' && (
+                <>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title="Split into subtasks"
+                    aria-label={`Add a subtask to ${child.label}`}
+                    onClick={() => setSplittingEntryId(child.id)}
+                  >
+                    +
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title="Skip"
+                    aria-label={`Skip ${child.label}`}
+                    onClick={() => skip(child.id)}
+                  >
+                    ⤼
+                  </button>
+                </>
+              )}
+            </div>
+            {subtree(child)}
+          </li>
+        ))}
+        {splittingEntryId === entry.id && (
+          <li>
+            <SubtaskQuickAdd onAdd={(label) => addSubtask(entry.id, label)} onClose={() => setSplittingEntryId(null)} />
+          </li>
+        )}
+      </ul>
+    )
   }
 
   return (
@@ -102,35 +189,29 @@ export function SessionRunnerScreen() {
       )}
 
       <DraggableList
-        items={session.taskEntries}
+        items={topEntries}
         onReorder={reorder}
         renderItem={(entry) => (
-          <div
-            className={`row row-between card card-tight${entry.status === 'skipped' ? ' is-skipped' : ''}`}
-          >
-            <div className="row grow">
-              <input
-                type="checkbox"
-                aria-label={`Done: ${entry.label}`}
-                checked={entry.status === 'completed'}
-                disabled={entry.status === 'skipped'}
-                onChange={() => toggle(entry.id)}
-              />
-              <InlineEdit
-                value={entry.label}
-                ariaLabel="Task name"
-                onSave={(label) =>
-                  run({ operation: 'session.renameTask', payload: { sessionId: session.id, entryId: entry.id, label } })
-                }
-                className={entry.status === 'completed' ? 'is-done' : undefined}
-              />
-              {entry.isAdHoc && <span className="chip">ad-hoc</span>}
+          <div className={`card card-tight${entry.status === 'skipped' ? ' is-skipped' : ''}`}>
+            <div className="row row-between">
+              <div className="row grow">
+                {entryCheckbox(entry)}
+                {entryLabel(entry)}
+                {entry.isAdHoc && <span className="chip">ad-hoc</span>}
+                {childMeter(entry.id)}
+                {entry.status !== 'skipped' && splittingEntryId !== entry.id && (
+                  <button type="button" className="split-link" onClick={() => setSplittingEntryId(entry.id)}>
+                    {childEntries(entry.id).length ? '+ subtask' : '+ split'}
+                  </button>
+                )}
+              </div>
+              {entry.status !== 'skipped' && (
+                <button type="button" className="btn" onClick={() => skip(entry.id)}>
+                  Skip
+                </button>
+              )}
             </div>
-            {entry.status !== 'skipped' && (
-              <button type="button" className="btn" onClick={() => skip(entry.id)}>
-                Skip
-              </button>
-            )}
+            {subtree(entry)}
           </div>
         )}
       />

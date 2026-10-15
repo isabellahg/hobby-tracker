@@ -55,3 +55,9 @@ export const sessionRenameTaskSchema = z.object({
   entryId: z.string().min(1),
   label: z.string().min(1),
 })
+
+export const sessionAddSubtaskSchema = z.object({
+  sessionId: z.string().min(1),
+  parentEntryId: z.string().min(1),
+  label: z.string().min(1),
+})

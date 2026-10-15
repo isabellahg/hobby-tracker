@@ -3,15 +3,17 @@ import type { TaskDef, TaskKind } from '../domain/types/taskDef'
 import { useAppStore } from '../state/store'
 import { run } from '../state/actions'
 import { TaskTagPicker } from './TaskTagPicker'
+import { descendantsOf } from '../domain/logic/taskTree'
 
 function toggle(list: string[], id: string): string[] {
   return list.includes(id) ? list.filter((x) => x !== id) : [...list, id]
 }
 
-/** Edits an existing task's label, type, hobby/skill tags, and next action. */
+/** Edits an existing task's label, type, hobby/skill tags, parent, and next action. */
 export function TaskEditor({ task, onDone }: { task: TaskDef; onDone: () => void }) {
   const allHobbies = useAppStore((s) => s.hobbies)
   const allSkills = useAppStore((s) => s.skills)
+  const allTaskDefs = useAppStore((s) => s.taskDefs)
   const hobbies = allHobbies.filter((h) => !h.archived)
   const skills = allSkills.filter((s) => !s.archived)
 
@@ -20,7 +22,14 @@ export function TaskEditor({ task, onDone }: { task: TaskDef; onDone: () => void
   const [hobbyIds, setHobbyIds] = useState(task.hobbyIds)
   const [skillIds, setSkillIds] = useState(task.skillIds)
   const [nextAction, setNextAction] = useState(task.nextAction ?? '')
+  const [parentId, setParentId] = useState(task.parentId ?? '')
   const [error, setError] = useState<string | null>(null)
+
+  // Any open task except itself and its own subtree can become the parent.
+  const excluded = new Set([task.id, ...descendantsOf(allTaskDefs, task.id).map((t) => t.id)])
+  const parentOptions = allTaskDefs
+    .filter((t) => !t.archived && !excluded.has(t.id))
+    .sort((a, b) => a.label.localeCompare(b.label))
 
   async function save() {
     if (!label.trim()) {
@@ -36,6 +45,7 @@ export function TaskEditor({ task, onDone }: { task: TaskDef; onDone: () => void
         hobbyIds,
         skillIds,
         nextAction: kind === 'ongoing' ? nextAction.trim() : undefined,
+        ...(parentId !== (task.parentId ?? '') && { parentId: parentId || null }),
       },
     })
     if (!result.success) {
@@ -79,6 +89,17 @@ export function TaskEditor({ task, onDone }: { task: TaskDef; onDone: () => void
           />
         </div>
       )}
+      <div className="field">
+        <label htmlFor={`task-parent-${task.id}`}>Subtask of</label>
+        <select id={`task-parent-${task.id}`} value={parentId} onChange={(e) => setParentId(e.target.value)}>
+          <option value="">— nothing (top level) —</option>
+          {parentOptions.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+      </div>
       {error && <p className="error">{error}</p>}
       <div className="row">
         <button type="button" className="btn btn-primary" onClick={save}>

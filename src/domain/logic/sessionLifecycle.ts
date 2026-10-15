@@ -35,6 +35,13 @@ export function startSession(params: StartSessionParams): Session {
       isAdHoc: false,
     }
   })
+  // Nest a subtask under its parent's entry when both made it into the session.
+  const entryIdByTaskDefId = new Map(taskEntries.map((e) => [e.taskDefId, e.id]))
+  for (const entry of taskEntries) {
+    const parentId = taskDefsById.get(entry.taskDefId!)?.parentId
+    const parentEntryId = parentId ? entryIdByTaskDefId.get(parentId) : undefined
+    if (parentEntryId) entry.parentEntryId = parentEntryId
+  }
 
   const hobbyIds = Array.from(
     new Set([...(routine?.hobbyIds ?? []), ...taskEntries.flatMap((t) => t.hobbyIds)]),
@@ -64,13 +71,35 @@ function updateEntry(session: Session, entryId: ID, patch: Partial<SessionTaskEn
   }
 }
 
+/**
+ * Toggles an entry, then keeps its ancestors consistent: a parent completes
+ * itself once all of its non-skipped subtasks are done, and drops back to
+ * pending when one of them is unchecked.
+ */
 export function toggleTask(session: Session, entryId: ID, now: Date = new Date()): Session {
   const entry = session.taskEntries.find((e) => e.id === entryId)
   if (!entry) return session
-  if (entry.status === 'completed') {
-    return updateEntry(session, entryId, { status: 'pending', completedAt: undefined })
+  let next =
+    entry.status === 'completed'
+      ? updateEntry(session, entryId, { status: 'pending', completedAt: undefined })
+      : updateEntry(session, entryId, { status: 'completed', completedAt: now.toISOString() })
+
+  let parentId = entry.parentEntryId
+  const seen = new Set<ID>([entryId])
+  while (parentId && !seen.has(parentId)) {
+    seen.add(parentId)
+    const parent = next.taskEntries.find((e) => e.id === parentId)
+    if (!parent || parent.status === 'skipped') break
+    const children = next.taskEntries.filter((e) => e.parentEntryId === parentId && e.status !== 'skipped')
+    const allDone = children.length > 0 && children.every((e) => e.status === 'completed')
+    if (allDone && parent.status === 'pending') {
+      next = updateEntry(next, parent.id, { status: 'completed', completedAt: now.toISOString() })
+    } else if (!allDone && parent.status === 'completed') {
+      next = updateEntry(next, parent.id, { status: 'pending', completedAt: undefined })
+    } else break
+    parentId = parent.parentEntryId
   }
-  return updateEntry(session, entryId, { status: 'completed', completedAt: now.toISOString() })
+  return next
 }
 
 export function skipTask(session: Session, entryId: ID): Session {
@@ -119,6 +148,33 @@ export function addAdHocTask(
     hobbyIds: Array.from(new Set([...session.hobbyIds, ...hobbyIds])),
     skillIds: Array.from(new Set([...session.skillIds, ...skillIds])),
   }
+}
+
+/**
+ * Adds a subtask entry under `parentEntryId`. When the parent came from the
+ * library, `taskDef` is the freshly created child task it links to.
+ */
+export function addSubtaskEntry(session: Session, parentEntryId: ID, label: string, taskDef?: TaskDef): Session {
+  const parent = session.taskEntries.find((e) => e.id === parentEntryId)
+  if (!parent) throw new Error(`Task entry ${parentEntryId} not found`)
+  const order = Math.max(...session.taskEntries.map((e) => e.order)) + 1
+  const entry: SessionTaskEntry = {
+    id: newId(),
+    taskDefId: taskDef?.id,
+    label,
+    hobbyIds: taskDef?.hobbyIds ?? parent.hobbyIds,
+    skillIds: taskDef?.skillIds ?? parent.skillIds,
+    status: 'pending',
+    order,
+    isAdHoc: !taskDef,
+    parentEntryId,
+  }
+  // A new open subtask means a completed parent isn't done anymore.
+  const reopened =
+    parent.status === 'completed'
+      ? updateEntry(session, parent.id, { status: 'pending', completedAt: undefined })
+      : session
+  return { ...reopened, taskEntries: [...reopened.taskEntries, entry] }
 }
 
 export function reorderTasks(session: Session, orderedEntryIds: ID[]): Session {

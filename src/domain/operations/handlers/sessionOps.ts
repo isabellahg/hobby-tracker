@@ -1,5 +1,6 @@
 import {
   addAdHocTask,
+  addSubtaskEntry,
   discardSession,
   finishSession,
   pauseSession,
@@ -11,12 +12,16 @@ import {
   startSession,
   toggleTask,
 } from '../../logic/sessionLifecycle'
+import { newId } from '../../types/common'
 import type { TaskDef } from '../../types/taskDef'
+import { descendantsOf } from '../../logic/taskTree'
+import { archiveTaskTree } from './taskDefOps'
 import { planBucketRepo, routineRepo, sessionRepo, taskDefRepo } from '../../../storage/repositories'
 import type { ChangedRecord } from '../envelope'
 import type { OperationContext } from '../context'
 import type {
   sessionAddAdHocTaskSchema,
+  sessionAddSubtaskSchema,
   sessionEntryIdSchema,
   sessionFinishSchema,
   sessionIdSchema,
@@ -178,10 +183,11 @@ export async function handleSessionFinish(
       .map((e) => e.taskDefId!)
     const taskDefs = await taskDefRepo.getByIds(completedTaskDefIds)
     for (const taskDef of taskDefs) {
-      if (taskDef.kind !== 'once' || taskDef.archived) continue
-      const archived: TaskDef = { ...taskDef, archived: true, updatedAt: ctx.now.toISOString() }
-      await taskDefRepo.put(archived)
-      changes.push({ store: 'taskDefs', id: archived.id, changeType: 'updated', before: taskDef, after: archived })
+      if (taskDef.kind !== 'once') continue
+      // Re-read: an earlier parent in this loop may already have closed it.
+      const current = await taskDefRepo.getById(taskDef.id)
+      if (!current || current.archived) continue
+      changes.push(...(await archiveTaskTree(current, ctx.now)))
     }
   }
 
@@ -218,9 +224,14 @@ export async function handleSessionStartFromBucket(
   const bucket = await planBucketRepo.getById(payload.bucketId)
   if (!bucket) throw new Error(`Plan bucket ${payload.bucketId} not found`)
 
-  const orderedTaskDefIds = [...bucket.taskRefs].sort((a, b) => a.order - b.order).map((r) => r.taskDefId)
-  const taskDefs = await taskDefRepo.getByIds(orderedTaskDefIds)
-  const taskDefsById = new Map(taskDefs.map((d) => [d.id, d]))
+  // A bucketed task brings its open subtasks along, right after it.
+  const allTaskDefs = await taskDefRepo.getAll()
+  const taskDefsById = new Map(allTaskDefs.map((d) => [d.id, d]))
+  const orderedTaskDefIds: string[] = []
+  for (const ref of [...bucket.taskRefs].sort((a, b) => a.order - b.order)) {
+    const subtree = [ref.taskDefId, ...descendantsOf(allTaskDefs, ref.taskDefId).filter((t) => !t.archived).map((t) => t.id)]
+    for (const id of subtree) if (!orderedTaskDefIds.includes(id)) orderedTaskDefIds.push(id)
+  }
   const startedAt = resolveWhen(payload.occurredAt, ctx.now)
 
   const session = startSession({
@@ -286,4 +297,42 @@ export async function handleSessionDelete(
     changes: [{ store: 'sessions', id: existing.id, changeType: 'deleted', before: existing }],
     summary: `Delete session from ${existing.dateKey}`,
   }
+}
+
+/**
+ * Splits a task mid-session. If the parent entry came from the library the
+ * subtask becomes a real child task too, so it outlives the session.
+ */
+export async function handleSessionAddSubtask(
+  payload: z.infer<typeof sessionAddSubtaskSchema>,
+  ctx: OperationContext,
+): Promise<{ changes: ChangedRecord[]; summary: string }> {
+  const existing = await requireSession(payload.sessionId)
+  const parentEntry = existing.taskEntries.find((e) => e.id === payload.parentEntryId)
+  if (!parentEntry) throw new Error(`Task entry ${payload.parentEntryId} not found`)
+  const changes: ChangedRecord[] = []
+
+  const parentDef = parentEntry.taskDefId ? await taskDefRepo.getById(parentEntry.taskDefId) : undefined
+  let child: TaskDef | undefined
+  if (parentDef && !parentDef.archived) {
+    const now = ctx.now.toISOString()
+    child = {
+      id: newId(),
+      label: payload.label,
+      hobbyIds: parentDef.hobbyIds,
+      skillIds: parentDef.skillIds,
+      kind: 'once',
+      parentId: parentDef.id,
+      archived: false,
+      createdAt: now,
+      updatedAt: now,
+    }
+    await taskDefRepo.put(child)
+    changes.push({ store: 'taskDefs', id: child.id, changeType: 'created', after: child })
+  }
+
+  const updated = addSubtaskEntry(existing, parentEntry.id, payload.label, child)
+  await sessionRepo.put(updated)
+  changes.unshift({ store: 'sessions', id: updated.id, changeType: 'updated', before: existing, after: updated })
+  return { changes, summary: `Add subtask "${payload.label}" to "${parentEntry.label}"` }
 }

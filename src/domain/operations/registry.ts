@@ -28,6 +28,7 @@ import {
 import { handleWeeklyPlanUpdate } from './handlers/weeklyPlanOps'
 import {
   handleSessionAddAdHocTask,
+  handleSessionAddSubtask,
   handleSessionDelete,
   handleSessionDiscard,
   handleSessionFinish,
@@ -87,6 +88,7 @@ const handlers: Record<OperationName, RegistryEntry> = {
   'session.skipTask': { schema: v.sessionEntryIdSchema, handle: handleSessionSkipTask },
   'session.setTaskStatus': { schema: v.sessionSetTaskStatusSchema, handle: handleSessionSetTaskStatus },
   'session.addAdHocTask': { schema: v.sessionAddAdHocTaskSchema, handle: handleSessionAddAdHocTask },
+  'session.addSubtask': { schema: v.sessionAddSubtaskSchema, handle: handleSessionAddSubtask },
   'session.reorderTasks': { schema: v.sessionReorderTasksSchema, handle: handleSessionReorderTasks },
   'session.pause': { schema: v.sessionIdSchema, handle: handleSessionPause },
   'session.resume': { schema: v.sessionIdSchema, handle: handleSessionResume },

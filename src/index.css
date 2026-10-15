@@ -1006,6 +1006,74 @@ details.archived > .list-plain {
   font-size: 0.75rem;
 }
 
+/* ---------- Subtasks ---------- */
+
+.mini-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.mini-bar {
+  width: 36px;
+  height: 3px;
+  background: var(--border-strong);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.mini-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--violet);
+}
+
+.split-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--violet-text);
+  font-size: 0.78rem;
+  opacity: 0.75;
+}
+
+.split-link:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.subtree {
+  list-style: none;
+  margin: 0.1rem 0 0 0.35rem;
+  padding: 0 0 0 0.6rem;
+  border-left: 1px solid var(--border);
+}
+
+.subtask-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.05rem 0.2rem;
+  font-size: 0.88rem;
+}
+
+.subtask-row:hover {
+  background: var(--bg-hover);
+}
+
+.subtask-row .icon-btn {
+  font-size: 0.8rem;
+}
+
+input.subtask-input {
+  width: 100%;
+  font-size: 0.85rem;
+  padding: 0.1rem 0.35rem;
+}
+
 /* ---------- Responsive ----------
  * Desktop (> 1100px) is the reference layout; everything below only kicks in
  * on smaller or touch screens and keeps the same dense spacing.

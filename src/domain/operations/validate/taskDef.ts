@@ -5,11 +5,14 @@ const taskKindSchema = z.enum(['once', 'recurring', 'ongoing'])
 export const taskDefCreateSchema = z.object({
   label: z.string().min(1),
   description: z.string().optional(),
-  hobbyIds: z.array(z.string()).default([]),
-  skillIds: z.array(z.string()).default([]),
+  /** Omitted on a subtask → copied from the parent. */
+  hobbyIds: z.array(z.string()).optional(),
+  skillIds: z.array(z.string()).optional(),
   kind: taskKindSchema.default('once'),
   nextAction: z.string().optional(),
   defaultEstimateMin: z.number().positive().optional(),
+  /** Makes this a subtask of an open task. */
+  parentId: z.string().min(1).optional(),
 })
 
 export const taskDefUpdateSchema = z.object({
@@ -21,6 +24,8 @@ export const taskDefUpdateSchema = z.object({
   kind: taskKindSchema.optional(),
   nextAction: z.string().optional(),
   defaultEstimateMin: z.number().positive().optional(),
+  /** null moves the task to the top level. */
+  parentId: z.string().min(1).nullable().optional(),
 })
 
 export const taskDefArchiveSchema = z.object({

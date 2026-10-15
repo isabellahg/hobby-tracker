@@ -8,6 +8,7 @@ import type { Session } from '../../domain/types/session'
 import { Chip } from '../../components/Chip'
 import { InlineEdit } from '../../components/InlineEdit'
 import { sessionTitle } from './sessionTitle'
+import { EntryLine } from './EntryLine'
 
 function formatDuration(sec: number): string {
   const m = Math.floor(sec / 60)
@@ -107,7 +108,9 @@ export function SessionSummaryCard({ session }: { session: Session }) {
           <h3>Completed</h3>
           <ul className="list-bullets">
             {completed.map((e) => (
-              <li key={e.id}>{e.label}</li>
+              <li key={e.id}>
+                <EntryLine entry={e} entries={session.taskEntries} />
+              </li>
             ))}
           </ul>
         </div>
@@ -118,7 +121,9 @@ export function SessionSummaryCard({ session }: { session: Session }) {
           <h3>Unfinished</h3>
           <ul className="list-bullets">
             {unfinished.map((e) => (
-              <li key={e.id}>{e.label}</li>
+              <li key={e.id}>
+                <EntryLine entry={e} entries={session.taskEntries} />
+              </li>
             ))}
           </ul>
           <p className="muted">Anything from your backlog you didn't get to is still there for next time.</p>

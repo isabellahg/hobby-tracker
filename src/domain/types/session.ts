@@ -16,6 +16,8 @@ export interface SessionTaskEntry {
   status: SessionTaskStatus
   order: number
   isAdHoc: boolean
+  /** Entry of the parent task in this same session, snapshotted so history keeps its nesting. */
+  parentEntryId?: ID
   completedAt?: ISODateTimeString
 }
 

@@ -21,6 +21,8 @@ export interface TaskDef {
   skillIds: ID[]
   defaultEstimateMin?: number
   kind: TaskKind
+  /** Parent task when this is a subtask. Children are plain tasks; no manual order. */
+  parentId?: ID
   /** What to do next on an ongoing task. */
   nextAction?: string
   archived: boolean

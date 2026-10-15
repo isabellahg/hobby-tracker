@@ -6,6 +6,7 @@ import { InlineEdit } from '../../components/InlineEdit'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { Panel } from '../../components/Panel'
 import { sessionTitle } from '../session/sessionTitle'
+import { EntryLine } from '../session/EntryLine'
 
 export function HistoryScreen() {
   const sessions = useAppStore((s) => s.sessions)
@@ -144,7 +145,9 @@ export function HistoryScreen() {
                       <div className="section-title small">Completed ({completed.length})</div>
                       <ul className="list-bullets">
                         {completed.map((e) => (
-                          <li key={e.id}>{e.label}</li>
+                          <li key={e.id}>
+                <EntryLine entry={e} entries={s.taskEntries} />
+              </li>
                         ))}
                         {completed.length === 0 && <li className="muted">None</li>}
                       </ul>
@@ -153,7 +156,9 @@ export function HistoryScreen() {
                       <div className="section-title small">Unfinished ({unfinished.length})</div>
                       <ul className="list-bullets">
                         {unfinished.map((e) => (
-                          <li key={e.id}>{e.label}</li>
+                          <li key={e.id}>
+                <EntryLine entry={e} entries={s.taskEntries} />
+              </li>
                         ))}
                         {unfinished.length === 0 && <li className="muted">None</li>}
                       </ul>

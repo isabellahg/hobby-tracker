@@ -2,6 +2,7 @@ import { newId } from '../../types/common'
 import type { TaskDef } from '../../types/taskDef'
 import type { PersonalRecord } from '../../types/record'
 import { toISODate } from '../../logic/weekUtils'
+import { descendantsOf, wouldCreateCycle } from '../../logic/taskTree'
 import { recordRepo, taskDefRepo } from '../../../storage/repositories'
 import type { ChangedRecord } from '../envelope'
 import type { OperationContext } from '../context'
@@ -19,18 +20,47 @@ const KIND_LABEL: Record<TaskDef['kind'], string> = {
   ongoing: 'ongoing',
 }
 
+async function requireOpenParent(parentId: string): Promise<TaskDef> {
+  const parent = await taskDefRepo.getById(parentId)
+  if (!parent) throw new Error(`Parent task ${parentId} not found`)
+  if (parent.archived) throw new Error(`"${parent.label}" is archived; restore it before adding subtasks`)
+  return parent
+}
+
+function subtaskSuffix(count: number): string {
+  return count > 0 ? ` and ${count} subtask${count === 1 ? '' : 's'}` : ''
+}
+
+/**
+ * Archives a task together with every still-open subtask below it — closing a
+ * parent closes its whole tree. Restoring is deliberately not cascaded.
+ */
+export async function archiveTaskTree(root: TaskDef, now: Date): Promise<ChangedRecord[]> {
+  const all = await taskDefRepo.getAll()
+  const targets = [root, ...descendantsOf(all, root.id)].filter((t) => !t.archived)
+  const changes: ChangedRecord[] = []
+  for (const task of targets) {
+    const archived: TaskDef = { ...task, archived: true, updatedAt: now.toISOString() }
+    await taskDefRepo.put(archived)
+    changes.push({ store: 'taskDefs', id: archived.id, changeType: 'updated', before: task, after: archived })
+  }
+  return changes
+}
+
 export async function handleTaskDefCreate(
   payload: z.infer<typeof taskDefCreateSchema>,
   ctx: OperationContext,
 ): Promise<{ changes: ChangedRecord[]; summary: string }> {
   const now = ctx.now.toISOString()
+  const parent = payload.parentId ? await requireOpenParent(payload.parentId) : undefined
   const taskDef: TaskDef = {
     id: newId(),
     label: payload.label,
     description: payload.description,
-    hobbyIds: payload.hobbyIds,
-    skillIds: payload.skillIds,
+    hobbyIds: payload.hobbyIds ?? parent?.hobbyIds ?? [],
+    skillIds: payload.skillIds ?? parent?.skillIds ?? [],
     kind: payload.kind,
+    parentId: parent?.id,
     nextAction: payload.nextAction,
     defaultEstimateMin: payload.defaultEstimateMin,
     archived: false,
@@ -40,7 +70,9 @@ export async function handleTaskDefCreate(
   await taskDefRepo.put(taskDef)
   return {
     changes: [{ store: 'taskDefs', id: taskDef.id, changeType: 'created', after: taskDef }],
-    summary: `Create ${KIND_LABEL[taskDef.kind]} task "${taskDef.label}"`,
+    summary: parent
+      ? `Add subtask "${taskDef.label}" to "${parent.label}"`
+      : `Create ${KIND_LABEL[taskDef.kind]} task "${taskDef.label}"`,
   }
 }
 
@@ -50,8 +82,18 @@ export async function handleTaskDefUpdate(
 ): Promise<{ changes: ChangedRecord[]; summary: string }> {
   const existing = await taskDefRepo.getById(payload.id)
   if (!existing) throw new Error(`Task ${payload.id} not found`)
+  let parentId = existing.parentId
+  if (payload.parentId === null) parentId = undefined
+  else if (payload.parentId !== undefined && payload.parentId !== existing.parentId) {
+    await requireOpenParent(payload.parentId)
+    if (wouldCreateCycle(await taskDefRepo.getAll(), existing.id, payload.parentId)) {
+      throw new Error(`"${existing.label}" can't be a subtask of itself or of its own subtask`)
+    }
+    parentId = payload.parentId
+  }
   const updated: TaskDef = {
     ...existing,
+    parentId,
     label: payload.label ?? existing.label,
     description: payload.description ?? existing.description,
     hobbyIds: payload.hobbyIds ?? existing.hobbyIds,
@@ -74,11 +116,15 @@ export async function handleTaskDefArchive(
 ): Promise<{ changes: ChangedRecord[]; summary: string }> {
   const existing = await taskDefRepo.getById(payload.id)
   if (!existing) throw new Error(`Task ${payload.id} not found`)
-  const updated: TaskDef = { ...existing, archived: payload.archived, updatedAt: ctx.now.toISOString() }
+  if (payload.archived) {
+    const changes = await archiveTaskTree(existing, ctx.now)
+    return { changes, summary: `Archive task "${existing.label}"${subtaskSuffix(changes.length - 1)}` }
+  }
+  const updated: TaskDef = { ...existing, archived: false, updatedAt: ctx.now.toISOString() }
   await taskDefRepo.put(updated)
   return {
     changes: [{ store: 'taskDefs', id: updated.id, changeType: 'updated', before: existing, after: updated }],
-    summary: `${payload.archived ? 'Archive' : 'Restore'} task "${updated.label}"`,
+    summary: `Restore task "${updated.label}"`,
   }
 }
 
@@ -93,7 +139,6 @@ export async function handleTaskDefFinish(
   if (existing.archived) throw new Error(`"${existing.label}" is already finished or archived`)
 
   const now = ctx.now.toISOString()
-  const finished: TaskDef = { ...existing, archived: true, updatedAt: now }
   const record: PersonalRecord = {
     id: newId(),
     hobbyId: existing.hobbyIds[0],
@@ -103,13 +148,10 @@ export async function handleTaskDefFinish(
     taskDefId: existing.id,
     createdAt: now,
   }
-  await taskDefRepo.put(finished)
+  const taskChanges = await archiveTaskTree(existing, ctx.now)
   await recordRepo.put(record)
   return {
-    changes: [
-      { store: 'taskDefs', id: finished.id, changeType: 'updated', before: existing, after: finished },
-      { store: 'personalRecords', id: record.id, changeType: 'created', after: record },
-    ],
+    changes: [...taskChanges, { store: 'personalRecords', id: record.id, changeType: 'created', after: record }],
     summary: `Finish "${existing.label}" and record it as a milestone`,
   }
 }

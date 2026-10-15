@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '../../state/store'
 import { run } from '../../state/actions'
 import { countSessionsForTask } from '../../domain/logic/taskProgress'
+import { childProgress, descendantsOf, isTreeRoot } from '../../domain/logic/taskTree'
 import { TaskTagPicker } from '../../components/TaskTagPicker'
 import { kindLabel as kindName } from '../../components/taskKinds'
 import { TaskEditor } from '../../components/TaskEditor'
@@ -10,6 +11,7 @@ import { InlineEdit } from '../../components/InlineEdit'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { Chip } from '../../components/Chip'
 import { Panel } from '../../components/Panel'
+import { ChildMeter, Subtasks } from '../../components/Subtasks'
 import type { PlanBucket } from '../../domain/types/planBucket'
 import type { TaskDef, TaskKind } from '../../domain/types/taskDef'
 
@@ -52,6 +54,8 @@ export function PlanningBoard() {
   const hobbies = allHobbies.filter((h) => !h.archived)
   const skills = allSkills.filter((sk) => !sk.archived)
   const taskDefById = new Map(taskDefs.map((t) => [t.id, t]))
+  const openIds = new Set(taskDefById.keys())
+  const rootTasks = taskDefs.filter((t) => isTreeRoot(t, openIds))
   const hobbyById = new Map(allHobbies.map((h) => [h.id, h]))
   const skillById = new Map(allSkills.map((s) => [s.id, s]))
 
@@ -164,6 +168,28 @@ export function PlanningBoard() {
     )
   }
 
+  /** Touch screens have no native drag-and-drop, so offer a picker instead. */
+  function bucketPicker(task: TaskDef) {
+    if (buckets.length === 0) return null
+    return (
+      <select
+        className="touch-only bucket-picker"
+        aria-label={`Add ${task.label} to a planning session`}
+        value=""
+        onChange={(e) => {
+          if (e.target.value) moveTask({ taskDefId: task.id, sourceBucketId: null }, e.target.value)
+        }}
+      >
+        <option value="">→ add to…</option>
+        {buckets.map((b) => (
+          <option key={b.id} value={b.id}>
+            {b.name}
+          </option>
+        ))}
+      </select>
+    )
+  }
+
   function backlogCard(task: TaskDef) {
     if (editingTaskId === task.id) {
       return (
@@ -213,24 +239,21 @@ export function PlanningBoard() {
             </span>
           )}
         </div>
-        {/* Touch screens have no native drag-and-drop, so offer a picker instead. */}
-        {buckets.length > 0 && (
-          <select
-            className="touch-only bucket-picker"
-            aria-label={`Add ${task.label} to a planning session`}
-            value=""
-            onChange={(e) => {
-              if (e.target.value) moveTask({ taskDefId: task.id, sourceBucketId: null }, e.target.value)
-            }}
-          >
-            <option value="">→ add to…</option>
-            {buckets.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-        )}
+        {bucketPicker(task)}
+        <Subtasks
+          task={task}
+          allTasks={allTaskDefs}
+          rowProps={(sub) => ({
+            draggable: true,
+            className: 'card-draggable',
+            onDragStart: (e) => {
+              // Don't let the parent card's handler overwrite which task is dragged.
+              e.stopPropagation()
+              startDrag(e, { taskDefId: sub.id, sourceBucketId: null })
+            },
+          })}
+          rowExtras={bucketPicker}
+        />
         {task.kind === 'ongoing' && (
           <div className="row small">
             <span className="muted">next:</span>
@@ -247,6 +270,7 @@ export function PlanningBoard() {
   }
 
   function bucketCard(task: TaskDef, bucket: PlanBucket) {
+    const openSubtaskCount = descendantsOf(taskDefs, task.id).length
     return (
       <div
         draggable
@@ -267,7 +291,15 @@ export function PlanningBoard() {
             ×
           </button>
         </div>
-        <div className="row wrap">{tagChips(task)}</div>
+        <div className="row wrap">
+          {tagChips(task)}
+          <ChildMeter {...childProgress(allTaskDefs, task.id)} />
+          {openSubtaskCount > 0 && (
+            <span className="list-row-meta" title="Open subtasks come along when the session starts">
+              +{openSubtaskCount} subtask{openSubtaskCount === 1 ? '' : 's'}
+            </span>
+          )}
+        </div>
       </div>
     )
   }
@@ -286,7 +318,7 @@ export function PlanningBoard() {
         <Panel
           title="Backlog"
           icon="☰"
-          count={taskDefs.length}
+          count={rootTasks.length}
           description="Everything you might do. Drag a card onto a planning session."
           onDragOver={(e) => e.preventDefault()}
           onDrop={handleDropOnBacklog}
@@ -317,7 +349,7 @@ export function PlanningBoard() {
 
           <div className="stack stack-sm mt-sm">
             {taskDefs.length === 0 && <p className="empty-hint">Nothing in the backlog yet.</p>}
-            {taskDefs.map((t) => backlogCard(t))}
+            {rootTasks.map((t) => backlogCard(t))}
           </div>
         </Panel>
 

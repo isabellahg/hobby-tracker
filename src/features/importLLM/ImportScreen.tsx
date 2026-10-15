@@ -12,6 +12,7 @@ const EXAMPLE = JSON.stringify(
     operations: [
       { operation: 'taskDef.create', payload: { label: 'Collect references' } },
       { operation: 'taskDef.create', payload: { label: 'Sketch silhouette' } },
+      { operation: 'taskDef.create', payload: { label: 'Thumbnail 5 poses', parentId: '$ref:1' } },
       {
         operation: 'routine.create',
         payload: { name: 'Boss recreation', taskDefIds: ['$ref:0', '$ref:1'] },
