@@ -30,41 +30,22 @@ import type { Routine } from '../../domain/types/routine'
 import type { Session } from '../../domain/types/session'
 import type { TaskDef, TaskKind } from '../../domain/types/taskDef'
 import { sessionTitle } from '../session/sessionTitle'
-
-interface DragPayload {
-  taskDefId: string
-  /** null when dragged straight from the backlog, not out of a planning session. */
-  sourceBucketId: string | null
-}
+import { allowDrop, readDragPayload, startDrag, type DragPayload } from './drag'
+import { loggableSessions, logCompleted, sessionWhen } from './logCompleted'
+import { TaskContextMenu, type MenuAnchor } from './TaskContextMenu'
 
 /** Somewhere a backlog task can be sent. */
 type Target =
   | { type: 'bucket'; id: string }
   | { type: 'routine'; id: string }
   | { type: 'session'; id: string }
-
-const DRAG_MIME = 'application/x-plan-task'
-
-function readDragPayload(e: React.DragEvent): DragPayload | null {
-  const raw = e.dataTransfer.getData(DRAG_MIME)
-  if (!raw) return null
-  try {
-    return JSON.parse(raw) as DragPayload
-  } catch {
-    return null
-  }
-}
+  /** Log as already completed in a (usually finished) session. */
+  | { type: 'done'; id: string }
 
 function kindLabel(kind: TaskKind): string {
   return kindName(kind).toLowerCase()
 }
 
-function startDrag(e: React.DragEvent, payload: DragPayload) {
-  e.dataTransfer.setData(DRAG_MIME, JSON.stringify(payload))
-  e.dataTransfer.effectAllowed = 'move'
-}
-
-const allowDrop = (e: React.DragEvent) => e.preventDefault()
 
 const NEXT_SORT: Record<BacklogSort, BacklogSort> = { added: 'active', active: 'quiet', quiet: 'added' }
 const SORT_LABEL: Record<BacklogSort, string> = { added: 'newest', active: 'most active', quiet: 'least active' }
@@ -122,6 +103,17 @@ export function PlanningBoard() {
   })
   // In compact mode, the one row opened up into a full card.
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [menu, setMenu] = useState<MenuAnchor | null>(null)
+  const recentFinished = loggableSessions(sessions, 5).filter((s) => s.state === 'finished')
+
+  /** Right-click (long-press on a phone) a task: "Completed on ›". */
+  function openMenu(task: TaskDef) {
+    return (e: React.MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setMenu({ taskDefId: task.id, x: e.clientX, y: e.clientY })
+    }
+  }
 
   const activity = taskActivity(sessions, allTaskDefs, rootTasks)
   const sections = groupBacklog(
@@ -174,6 +166,12 @@ export function PlanningBoard() {
 
   /** Sends a task to a target; when it came out of a planning session, it leaves that one. */
   function sendTask(payload: DragPayload, target: Target) {
+    if (target.type === 'done') {
+      // Logging is a record of the past, not a move: the task stays where it is.
+      const session = sessions.find((x) => x.id === target.id)
+      if (session) logCompleted(payload.taskDefId, session)
+      return
+    }
     if (target.type === 'bucket' && payload.sourceBucketId === target.id) return
     if (payload.sourceBucketId) {
       run({ operation: 'bucket.removeTask', payload: { bucketId: payload.sourceBucketId, taskDefId: payload.taskDefId } })
@@ -245,7 +243,7 @@ export function PlanningBoard() {
 
   /** Touch screens have no native drag-and-drop, so offer a picker of every target instead. */
   function targetPicker(task: TaskDef) {
-    if (running.length + routines.length + buckets.length === 0) return null
+    if (running.length + routines.length + buckets.length + recentFinished.length === 0) return null
     return (
       <select
         className="touch-only bucket-picker"
@@ -284,6 +282,15 @@ export function PlanningBoard() {
             ))}
           </optgroup>
         )}
+        {recentFinished.length > 0 && (
+          <optgroup label="Already done in…">
+            {recentFinished.map((s) => (
+              <option key={s.id} value={`done:${s.id}`}>
+                ✓ {sessionTitle(s, allRoutines)} · {sessionWhen(s)}
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
     )
   }
@@ -302,6 +309,7 @@ export function PlanningBoard() {
         key={task.id}
         draggable
         onDragStart={(e) => startDrag(e, { taskDefId: task.id, sourceBucketId: null })}
+        onContextMenu={openMenu(task)}
         className="card card-tight card-draggable stack stack-sm"
       >
         <div className="row row-between">
@@ -362,6 +370,7 @@ export function PlanningBoard() {
               e.stopPropagation()
               startDrag(e, { taskDefId: sub.id, sourceBucketId: null })
             },
+            onContextMenu: openMenu(sub),
           })}
           rowExtras={targetPicker}
         />
@@ -398,6 +407,7 @@ export function PlanningBoard() {
       <div
         draggable
         onDragStart={(e) => startDrag(e, { taskDefId: task.id, sourceBucketId: null })}
+        onContextMenu={openMenu(task)}
         className="backlog-line card-draggable"
       >
         <span className={`kind-dot kind-${task.kind}`} title={kindName(task.kind)} />
@@ -435,6 +445,7 @@ export function PlanningBoard() {
       <div
         draggable
         onDragStart={(e) => startDrag(e, { taskDefId: task.id, sourceBucketId: bucket.id })}
+        onContextMenu={openMenu(task)}
         className="card card-tight card-draggable"
       >
         <div className="row row-between">
@@ -777,6 +788,13 @@ export function PlanningBoard() {
             Task Library if you change your mind.
           </p>
         </ConfirmDialog>
+      )}
+      {menu && (
+        <TaskContextMenu
+          anchor={menu}
+          onClose={() => setMenu(null)}
+          onEdit={rootTasks.some((t) => t.id === menu.taskDefId) ? (id) => setEditingTaskId(id) : undefined}
+        />
       )}
     </>
   )

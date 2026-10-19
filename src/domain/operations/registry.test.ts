@@ -585,6 +585,64 @@ describe('running session: add backlog tasks and tag it', () => {
   })
 })
 
+describe('logging a forgotten task as completed', () => {
+  async function finishedSession(ctx: ReturnType<typeof makeContext>) {
+    const started = await applyOperation({ operation: 'session.start', payload: {} }, ctx)
+    const sessionId = started.changes[0].id
+    await applyOperation({ operation: 'session.finish', payload: { sessionId } }, ctx)
+    return sessionId
+  }
+
+  it('adds a one-off to a finished session as completed, stamped at its end, and closes it', async () => {
+    const ctx = makeContext()
+    const task = await createTask('Forgot this', 'once', ctx)
+    const sessionId = await finishedSession(ctx)
+    const finishedAt = (await db.sessions.get(sessionId))!.finishedAt
+
+    const res = await applyOperation({ operation: 'session.logCompletedTask', payload: { sessionId, taskDefId: task } }, ctx)
+    expect(res.success).toBe(true)
+    const entry = (await db.sessions.get(sessionId))!.taskEntries.find((e) => e.taskDefId === task)!
+    expect(entry).toMatchObject({ status: 'completed', completedAt: finishedAt })
+    expect((await db.taskDefs.get(task))!.archived).toBe(true)
+  })
+
+  it('keeps a recurring task in the backlog and is a no-op the second time', async () => {
+    const ctx = makeContext()
+    const task = await createTask('Warmup', 'recurring', ctx)
+    const sessionId = await finishedSession(ctx)
+    await applyOperation({ operation: 'session.logCompletedTask', payload: { sessionId, taskDefId: task } }, ctx)
+    const again = await applyOperation({ operation: 'session.logCompletedTask', payload: { sessionId, taskDefId: task } }, ctx)
+    expect(again.success).toBe(true)
+    expect(again.changes).toHaveLength(0)
+    expect((await db.taskDefs.get(task))!.archived).toBe(false)
+  })
+
+  it('completes a subtask under its parent, and the parent once all its subtasks are done', async () => {
+    const ctx = makeContext()
+    const parent = await createTask('Diorama', 'ongoing', ctx)
+    const child = await applyOperation({ operation: 'taskDef.create', payload: { label: 'Lights', parentId: parent } }, ctx)
+    const childId = child.changes[0].id
+    const started = await applyOperation({ operation: 'session.start', payload: {} }, ctx)
+    const sessionId = started.changes[0].id
+    await applyOperation({ operation: 'session.addTask', payload: { sessionId, taskDefId: parent } }, ctx)
+
+    await applyOperation({ operation: 'session.logCompletedTask', payload: { sessionId, taskDefId: childId } }, ctx)
+    const entries = (await db.sessions.get(sessionId))!.taskEntries
+    expect(entries.find((e) => e.taskDefId === childId)?.status).toBe('completed')
+    expect(entries.find((e) => e.taskDefId === parent)?.status).toBe('completed')
+  })
+
+  it('refuses a discarded session', async () => {
+    const ctx = makeContext()
+    const task = await createTask('X', 'once', ctx)
+    const started = await applyOperation({ operation: 'session.start', payload: {} }, ctx)
+    const sessionId = started.changes[0].id
+    await applyOperation({ operation: 'session.discard', payload: { sessionId } }, ctx)
+    const res = await applyOperation({ operation: 'session.logCompletedTask', payload: { sessionId, taskDefId: task } }, ctx)
+    expect(res.success).toBe(false)
+  })
+})
+
 describe('task media', () => {
   it('attaches a link and a picture, and removes one', async () => {
     const ctx = makeContext()

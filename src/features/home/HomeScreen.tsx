@@ -10,6 +10,8 @@ import { Chip } from '../../components/Chip'
 import { sessionTitle } from '../session/sessionTitle'
 import { formatDuration } from '../../lib/format'
 import { PlanningBoard } from './PlanningBoard'
+import { allowDrop, readDragPayload } from './drag'
+import { logCompleted } from './logCompleted'
 
 export function HomeScreen() {
   const sessions = useAppStore((s) => s.sessions)
@@ -17,6 +19,7 @@ export function HomeScreen() {
   const hobbies = useAppStore((s) => s.hobbies)
   const skills = useAppStore((s) => s.skills)
   const [weekOffset, setWeekOffset] = useState(0)
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null)
 
   const now = useMemo(() => new Date(), [])
   const todayKey = toISODate(now)
@@ -87,13 +90,35 @@ export function HomeScreen() {
           </div>
         </Panel>
 
-        <Panel title="Recent sessions" icon="≡" count={recent.length}>
+        <Panel
+          title="Recent sessions"
+          icon="≡"
+          count={recent.length}
+          description="Forgot to add something? Drop the task on the session you did it in."
+        >
           {recent.length === 0 ? (
             <p className="empty-hint">No finished sessions yet.</p>
           ) : (
             <ul className="list-plain">
               {recent.map((s) => (
-                <li key={s.id} className="list-row recent-row">
+                <li
+                  key={s.id}
+                  className={dropTargetId === s.id ? 'list-row recent-row is-drop-target' : 'list-row recent-row'}
+                  title="Drop a task here to log it as done in this session"
+                  onDragOver={(e) => {
+                    allowDrop(e)
+                    setDropTargetId(s.id)
+                  }}
+                  onDragLeave={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTargetId(null)
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    setDropTargetId(null)
+                    const payload = readDragPayload(e)
+                    if (payload) logCompleted(payload.taskDefId, s)
+                  }}
+                >
                   <span className="dot dot-success" />
                   <a href={`#/session/${s.id}`} className="grow bar-label">
                     {sessionTitle(s, routines)}

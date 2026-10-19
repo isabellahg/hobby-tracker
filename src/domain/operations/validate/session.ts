@@ -51,6 +51,9 @@ export const sessionAddTaskSchema = z.object({
   taskDefId: z.string().min(1),
 })
 
+/** Same shape as addTask, but the task goes in already completed — finished sessions included. */
+export const sessionLogCompletedTaskSchema = sessionAddTaskSchema
+
 /** Replaces the session's hobby/skill tags — how a flexible session gets tagged. */
 export const sessionSetTagsSchema = z.object({
   sessionId: z.string().min(1),

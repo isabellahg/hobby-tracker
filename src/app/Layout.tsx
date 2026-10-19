@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAppStore } from '../state/store'
 import { computeWeekStreak } from '../domain/logic/weekStreak'
+import { Toaster } from '../components/Toaster'
 
 interface NavItem {
   to: string
@@ -131,6 +132,7 @@ export function Layout() {
         </main>
       </div>
       <StatusBar />
+      <Toaster />
     </div>
   )
 }

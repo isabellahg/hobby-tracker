@@ -23,6 +23,7 @@ export type OperationName =
   | 'weeklyPlan.update'
   | 'session.start'
   | 'session.addTask'
+  | 'session.logCompletedTask'
   | 'session.setTags'
   | 'session.toggleTask'
   | 'session.skipTask'

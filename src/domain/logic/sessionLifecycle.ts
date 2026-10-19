@@ -108,6 +108,24 @@ export function addLibraryTasks(session: Session, orderedTaskDefIds: ID[], taskD
   }
 }
 
+/**
+ * Records a library task as done in this session — for when it was done but
+ * never added. It joins the session if missing (nested under its parent's
+ * entry when that is there), then completes like a tick would, so a parent
+ * whose subtasks are now all done completes too. Already-completed: no change.
+ */
+export function logCompletedTask(
+  session: Session,
+  taskDefId: ID,
+  taskDefsById: Map<ID, TaskDef>,
+  when: Date,
+): Session {
+  const withTask = addLibraryTasks(session, [taskDefId], taskDefsById)
+  const entry = withTask.taskEntries.find((e) => e.taskDefId === taskDefId)
+  if (!entry || entry.status === 'completed') return session
+  return toggleTask(setTaskStatus(withTask, entry.id, 'pending', when), entry.id, when)
+}
+
 function updateEntry(session: Session, entryId: ID, patch: Partial<SessionTaskEntry>): Session {
   return {
     ...session,

@@ -4,6 +4,7 @@ import {
   addSubtaskEntry,
   discardSession,
   finishSession,
+  logCompletedTask,
   pauseSession,
   resumeSession,
   renameTask,
@@ -14,6 +15,7 @@ import {
   toggleTask,
 } from '../../logic/sessionLifecycle'
 import { newId } from '../../types/common'
+import type { Session } from '../../types/session'
 import type { TaskDef } from '../../types/taskDef'
 import { descendantsOf } from '../../logic/taskTree'
 import { archiveTaskTree } from './taskDefOps'
@@ -24,6 +26,7 @@ import type {
   sessionAddAdHocTaskSchema,
   sessionAddSubtaskSchema,
   sessionAddTaskSchema,
+  sessionLogCompletedTaskSchema,
   sessionSetTagsSchema,
   sessionEntryIdSchema,
   sessionFinishSchema,
@@ -237,34 +240,74 @@ export async function handleSessionFinish(
   ]
 
   await sessionRepo.put(finished)
-
-  // One-off tasks leave the backlog once actually completed. A routine's own
-  // tasks (and their subtasks) are template members meant to repeat, so they
-  // stay — but a task only added for this run of the routine is fair game.
-  const routine = finished.routineId ? await routineRepo.getById(finished.routineId) : undefined
-  const allTaskDefs = routine ? await taskDefRepo.getAll() : []
-  const routineMemberIds = new Set(
-    (routine?.taskRefs ?? []).flatMap((r) => [r.taskDefId, ...descendantsOf(allTaskDefs, r.taskDefId).map((t) => t.id)]),
-  )
-  {
-    const completedTaskDefIds = finished.taskEntries
-      .filter((e) => e.status === 'completed' && e.taskDefId && !routineMemberIds.has(e.taskDefId))
-      .map((e) => e.taskDefId!)
-    const taskDefs = await taskDefRepo.getByIds(completedTaskDefIds)
-    for (const taskDef of taskDefs) {
-      if (taskDef.kind !== 'once') continue
-      // Re-read: an earlier parent in this loop may already have closed it.
-      const current = await taskDefRepo.getById(taskDef.id)
-      if (!current || current.archived) continue
-      changes.push(...(await archiveTaskTree(current, ctx.now)))
-    }
-  }
+  const completedTaskDefIds = finished.taskEntries
+    .filter((e) => e.status === 'completed' && e.taskDefId)
+    .map((e) => e.taskDefId!)
+  changes.push(...(await closeCompletedOneOffs(finished, completedTaskDefIds, ctx.now)))
 
   const completedCount = finished.taskEntries.filter((e) => e.status === 'completed').length
   return {
     changes,
     summary: `Finish session — ${completedCount}/${finished.taskEntries.length} tasks completed, ${finished.durationSec ?? 0}s`,
   }
+}
+
+/**
+ * One-off tasks leave the backlog once actually completed in a finished
+ * session. A routine's own tasks (and their subtasks) are template members
+ * meant to repeat, so they stay — but a task only added for this run of the
+ * routine is fair game.
+ */
+async function closeCompletedOneOffs(session: Session, completedTaskDefIds: string[], now: Date): Promise<ChangedRecord[]> {
+  const routine = session.routineId ? await routineRepo.getById(session.routineId) : undefined
+  const allTaskDefs = routine ? await taskDefRepo.getAll() : []
+  const routineMemberIds = new Set(
+    (routine?.taskRefs ?? []).flatMap((r) => [r.taskDefId, ...descendantsOf(allTaskDefs, r.taskDefId).map((t) => t.id)]),
+  )
+  const changes: ChangedRecord[] = []
+  const taskDefs = await taskDefRepo.getByIds(completedTaskDefIds.filter((id) => !routineMemberIds.has(id)))
+  for (const taskDef of taskDefs) {
+    if (taskDef.kind !== 'once') continue
+    // Re-read: an earlier parent in this loop may already have closed it.
+    const current = await taskDefRepo.getById(taskDef.id)
+    if (!current || current.archived) continue
+    changes.push(...(await archiveTaskTree(current, now)))
+  }
+  return changes
+}
+
+/**
+ * "I did this but forgot to add it": puts a backlog task into a session as
+ * completed. On a finished session it's stamped at the session's end, and a
+ * one-off then leaves the backlog just as if it had been ticked in time.
+ */
+export async function handleSessionLogCompletedTask(
+  payload: z.infer<typeof sessionLogCompletedTaskSchema>,
+  ctx: OperationContext,
+): Promise<{ changes: ChangedRecord[]; summary: string }> {
+  const existing = await requireSession(payload.sessionId)
+  if (existing.state === 'discarded') throw new Error('Tasks cannot be logged on a discarded session')
+  const allTaskDefs = await taskDefRepo.getAll()
+  const task = allTaskDefs.find((t) => t.id === payload.taskDefId)
+  if (!task || task.archived) throw new Error(`Task ${payload.taskDefId} not found`)
+
+  const when = existing.finishedAt ? new Date(existing.finishedAt) : ctx.now
+  const updated = logCompletedTask(existing, task.id, new Map(allTaskDefs.map((d) => [d.id, d])), when)
+  if (updated === existing) return { changes: [], summary: `"${task.label}" was already completed in this session` }
+  await sessionRepo.put(updated)
+
+  const changes: ChangedRecord[] = [
+    { store: 'sessions', id: updated.id, changeType: 'updated', before: existing, after: updated },
+  ]
+  if (updated.state === 'finished') {
+    // The task itself, plus any parent that completed because of it.
+    const wasDone = new Set(existing.taskEntries.filter((e) => e.status === 'completed').map((e) => e.id))
+    const newlyDone = updated.taskEntries
+      .filter((e) => e.status === 'completed' && !wasDone.has(e.id) && e.taskDefId)
+      .map((e) => e.taskDefId!)
+    changes.push(...(await closeCompletedOneOffs(updated, newlyDone, ctx.now)))
+  }
+  return { changes, summary: `Log "${task.label}" as completed in the session` }
 }
 
 export async function handleSessionDiscard(
