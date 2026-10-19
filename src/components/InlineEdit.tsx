@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { EnterForm } from './EnterForm'
 
 /**
  * Shows text that turns into an input when clicked. Enter or blur saves,
@@ -29,22 +30,24 @@ export function InlineEdit({
 
   if (editing) {
     return (
-      <input
-        type="text"
-        autoFocus
-        aria-label={ariaLabel}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') commit()
-          if (e.key === 'Escape') {
-            setDraft(value)
-            setEditing(false)
-          }
-        }}
-        className={className}
-      />
+      <EnterForm onSubmit={commit} className="inline-edit-form">
+        <input
+          type="text"
+          autoFocus
+          enterKeyHint="done"
+          aria-label={ariaLabel}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => editing && commit()}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setDraft(value)
+              setEditing(false)
+            }
+          }}
+          className={className}
+        />
+      </EnterForm>
     )
   }
 

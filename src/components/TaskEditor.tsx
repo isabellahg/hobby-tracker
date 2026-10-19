@@ -1,9 +1,13 @@
-import { useState } from 'react'
+import { useState, type ClipboardEvent } from 'react'
 import type { TaskDef, TaskKind } from '../domain/types/taskDef'
 import { useAppStore } from '../state/store'
 import { run } from '../state/actions'
 import { TaskTagPicker } from './TaskTagPicker'
+import { EnterForm } from './EnterForm'
+import { MediaEditor } from './MediaEditor'
 import { descendantsOf } from '../domain/logic/taskTree'
+import { takePaste } from '../lib/attachments'
+import { saveAttachment } from '../state/attachments'
 
 function toggle(list: string[], id: string): string[] {
   return list.includes(id) ? list.filter((x) => x !== id) : [...list, id]
@@ -55,16 +59,25 @@ export function TaskEditor({ task, onDone }: { task: TaskDef; onDone: () => void
     onDone()
   }
 
+  // A pasted link or picture anywhere in the editor is attached instead of typed.
+  function handlePaste(e: ClipboardEvent) {
+    takePaste(e)
+      ?.then((list) => Promise.all(list.map((a) => saveAttachment(task.id, a))))
+      .catch((err) => setError(err instanceof Error ? err.message : 'Could not attach that'))
+  }
+
+  const formId = `task-edit-${task.id}`
   return (
-    <div onClick={(e) => e.stopPropagation()}>
+    <div onClick={(e) => e.stopPropagation()} onPaste={handlePaste}>
+      <EnterForm id={formId} onSubmit={save}>
       <div className="field">
         <label htmlFor={`task-label-${task.id}`}>Name</label>
         <input
           id={`task-label-${task.id}`}
           type="text"
+          enterKeyHint="done"
           value={label}
           onChange={(e) => setLabel(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && save()}
         />
       </div>
       <TaskTagPicker
@@ -100,9 +113,11 @@ export function TaskEditor({ task, onDone }: { task: TaskDef; onDone: () => void
           ))}
         </select>
       </div>
+      </EnterForm>
+      <MediaEditor taskDefId={task.id} />
       {error && <p className="error">{error}</p>}
       <div className="row">
-        <button type="button" className="btn btn-primary" onClick={save}>
+        <button type="submit" form={formId} className="btn btn-primary">
           Save
         </button>
         <button type="button" className="btn" onClick={onDone}>

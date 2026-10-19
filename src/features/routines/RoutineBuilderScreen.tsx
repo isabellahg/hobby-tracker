@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAppStore } from '../../state/store'
 import { run } from '../../state/actions'
+import { EnterForm } from '../../components/EnterForm'
 
 export function RoutineBuilderScreen() {
   const { id } = useParams()
@@ -161,18 +162,18 @@ export function RoutineBuilderScreen() {
           </div>
         )}
 
-        <div className="row">
+        <EnterForm className="row" onSubmit={quickAddTask}>
           <input
             type="text"
+            enterKeyHint="go"
             placeholder="Quick-add a new task"
             value={quickAddLabel}
             onChange={(e) => setQuickAddLabel(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && quickAddTask()}
           />
-          <button type="button" className="btn" onClick={quickAddTask}>
+          <button type="submit" className="btn">
             Add
           </button>
-        </div>
+        </EnterForm>
       </div>
 
       <div className="row">

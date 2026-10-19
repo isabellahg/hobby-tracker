@@ -1,25 +1,21 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import { useAppStore } from '../../state/store'
-import { run } from '../../state/actions'
 import { computeDayMarks } from '../../domain/logic/dayMark'
 import { computeWeekStreak } from '../../domain/logic/weekStreak'
-import { addWeeks, getDayOfWeek, getWeekEnd, getWeekStart, toISODate } from '../../domain/logic/weekUtils'
+import { addWeeks, getWeekEnd, getWeekStart, toISODate } from '../../domain/logic/weekUtils'
 import { WeekGrid } from '../../components/Calendar/WeekGrid'
 import { Panel } from '../../components/Panel'
+import { Chip } from '../../components/Chip'
 import { sessionTitle } from '../session/sessionTitle'
+import { formatDuration } from '../../lib/format'
 import { PlanningBoard } from './PlanningBoard'
-
-function formatMinutes(sec: number): string {
-  return sec < 60 ? '<1m' : `${Math.round(sec / 60)}m`
-}
 
 export function HomeScreen() {
   const sessions = useAppStore((s) => s.sessions)
-  const plan = useAppStore((s) => s.weeklyPlan)
   const routines = useAppStore((s) => s.routines)
-  const navigate = useNavigate()
+  const hobbies = useAppStore((s) => s.hobbies)
+  const skills = useAppStore((s) => s.skills)
   const [weekOffset, setWeekOffset] = useState(0)
 
   const now = useMemo(() => new Date(), [])
@@ -34,27 +30,16 @@ export function HomeScreen() {
   const streak = useMemo(() => computeWeekStreak(sessions, now), [sessions, now])
   const activeDaysViewed = marks.filter((m) => m.hasMark).length
 
-  const todayDow = getDayOfWeek(now)
-  const todaysRoutineIds = plan.assignments[todayDow] ?? []
-  const todaysRoutines = todaysRoutineIds
-    .map((id) => routines.find((r) => r.id === id))
-    .filter((r): r is NonNullable<typeof r> => !!r && !r.archived)
-
   const recent = sessions
     .filter((s) => s.state === 'finished')
     .sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1))
     .slice(0, 5)
 
-  async function startFromRoutine(routineId: string) {
-    const result = await run({ operation: 'session.start', payload: { routineId } })
-    if (result.success && result.changes[0]) navigate(`/session/${result.changes[0].id}`)
-  }
-
   return (
     <div className="home-layout">
       <PlanningBoard />
 
-      <aside className="home-aside stack">
+      <aside className="home-col home-aside stack">
         <Panel
           title={`Week of ${format(viewedWeekStart, 'MMM d')}`}
           icon="▦"
@@ -102,41 +87,34 @@ export function HomeScreen() {
           </div>
         </Panel>
 
-        <Panel
-          title="Today's suggestions"
-          icon="☼"
-          count={todaysRoutines.length}
-          description="Just a suggestion — starting anything else, or nothing at all, is equally fine."
-        >
-          {todaysRoutines.length === 0 ? (
-            <p className="empty-hint">
-              Nothing planned for today. Start anything from <a href="#/routines">Routines</a>.
-            </p>
-          ) : (
-            <div className="row wrap">
-              {todaysRoutines.map((r) => (
-                <button key={r.id} type="button" className="btn btn-primary" onClick={() => startFromRoutine(r.id)}>
-                  ▶ {r.name}
-                </button>
-              ))}
-            </div>
-          )}
-        </Panel>
-
         <Panel title="Recent sessions" icon="≡" count={recent.length}>
           {recent.length === 0 ? (
             <p className="empty-hint">No finished sessions yet.</p>
           ) : (
             <ul className="list-plain">
               {recent.map((s) => (
-                <li key={s.id} className="list-row">
+                <li key={s.id} className="list-row recent-row">
                   <span className="dot dot-success" />
                   <a href={`#/session/${s.id}`} className="grow bar-label">
                     {sessionTitle(s, routines)}
                   </a>
                   <span className="list-row-meta">
-                    {s.durationSec !== undefined ? formatMinutes(s.durationSec) : s.dateKey.slice(5)}
+                    {s.durationSec !== undefined ? formatDuration(s.durationSec) : s.dateKey.slice(5)}
                   </span>
+                  {s.hobbyIds.length + s.skillIds.length > 0 && (
+                    <span className="recent-tags">
+                      {s.hobbyIds.map((id) => (
+                        <Chip key={id} tone="hobby">
+                          {hobbies.find((h) => h.id === id)?.name ?? '?'}
+                        </Chip>
+                      ))}
+                      {s.skillIds.map((id) => (
+                        <Chip key={id} tone="skill">
+                          {skills.find((k) => k.id === id)?.name ?? '?'}
+                        </Chip>
+                      ))}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>

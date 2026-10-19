@@ -15,6 +15,11 @@ export interface Routine {
   hobbyIds: ID[]
   skillIds: ID[]
   taskRefs: RoutineTaskRef[]
+  /**
+   * Tasks added for the next run only (e.g. "today I'll also draw X").
+   * Seeded into the session after the routine's own tasks, then cleared.
+   */
+  extraTaskRefs?: RoutineTaskRef[]
   archived: boolean
   createdAt: ISODateTimeString
   updatedAt: ISODateTimeString

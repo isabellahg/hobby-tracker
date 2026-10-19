@@ -16,6 +16,7 @@ const SINGULAR_BY_STORE: Record<string, string> = {
   sessions: 'session',
   personalRecords: 'milestone',
   planBuckets: 'plan bucket',
+  taskMedia: 'attachment',
 }
 
 function pickLabel(record: unknown): string {

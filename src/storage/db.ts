@@ -7,6 +7,7 @@ import type { WeeklyPlan } from '../domain/types/weeklyPlan'
 import type { Session } from '../domain/types/session'
 import type { PersonalRecord } from '../domain/types/record'
 import type { PlanBucket } from '../domain/types/planBucket'
+import type { TaskMedia } from '../domain/types/taskMedia'
 
 export interface MetaRow {
   key: string
@@ -37,6 +38,7 @@ export class HobbyTrackerDB extends Dexie {
   personalRecords!: Table<PersonalRecord, string>
   meta!: Table<MetaRow, string>
   planBuckets!: Table<PlanBucket, string>
+  taskMedia!: Table<TaskMedia, string>
 
   constructor(name = 'HobbyTrackerDB') {
     super(name)
@@ -104,6 +106,11 @@ export class HobbyTrackerDB extends Dexie {
       projects: null,
       sessions: 'id, dateKey, routineId, state, *hobbyIds, *skillIds, startedAt',
     })
+
+    // v5: pictures and links attached to tasks.
+    this.version(5).stores({
+      taskMedia: 'id, taskDefId',
+    })
   }
 }
 
@@ -118,6 +125,7 @@ export const ALL_TABLE_NAMES = [
   'sessions',
   'personalRecords',
   'planBuckets',
+  'taskMedia',
 ] as const
 
 export type TableName = (typeof ALL_TABLE_NAMES)[number]

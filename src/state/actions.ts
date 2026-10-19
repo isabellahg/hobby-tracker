@@ -18,6 +18,7 @@ type ListKey = Extract<
   | 'sessions'
   | 'personalRecords'
   | 'planBuckets'
+  | 'taskMedia'
 >
 
 const STORE_TO_LIST_KEY: Record<string, ListKey> = {
@@ -28,6 +29,7 @@ const STORE_TO_LIST_KEY: Record<string, ListKey> = {
   sessions: 'sessions',
   personalRecords: 'personalRecords',
   planBuckets: 'planBuckets',
+  taskMedia: 'taskMedia',
 }
 
 function upsert<T extends { id: string }>(list: T[], item: T): T[] {
@@ -66,25 +68,39 @@ export function applyChangesToStore(changes: ChangedRecord[]): void {
   })
 }
 
-/** The single entry point for every mutation — used identically by UI components and the LLM Import screen. */
-export async function run(
-  req: OperationRequest,
-  ctxOverrides: Partial<OperationContext> = {},
-): Promise<OperationResult> {
-  const ctx = makeContext(ctxOverrides)
-  const result = await applyOperation(req, ctx)
-  if (result.success && !ctx.dryRun) applyChangesToStore(result.changes)
-  return result
+/**
+ * Operations are read-modify-write (e.g. a toggle reads the session, then
+ * writes it back), so two fired together — like ticking two tasks quickly —
+ * would each start from the same old record and the second would erase the
+ * first. Queue them so each sees the previous one's result.
+ */
+let queue: Promise<unknown> = Promise.resolve()
+function enqueue<T>(task: () => Promise<T>): Promise<T> {
+  const next = queue.then(task, task)
+  queue = next.catch(() => undefined)
+  return next
 }
 
-export async function runBatch(
+/** The single entry point for every mutation — used identically by UI components and the LLM Import screen. */
+export function run(req: OperationRequest, ctxOverrides: Partial<OperationContext> = {}): Promise<OperationResult> {
+  return enqueue(async () => {
+    const ctx = makeContext(ctxOverrides)
+    const result = await applyOperation(req, ctx)
+    if (result.success && !ctx.dryRun) applyChangesToStore(result.changes)
+    return result
+  })
+}
+
+export function runBatch(
   batch: OperationBatchRequest,
   ctxOverrides: Partial<OperationContext> = {},
 ): Promise<OperationBatchResult> {
-  const ctx = makeContext(ctxOverrides)
-  const result = await applyBatch(batch, ctx)
-  if (!ctx.dryRun) {
-    for (const r of result.results) if (r.success) applyChangesToStore(r.changes)
-  }
-  return result
+  return enqueue(async () => {
+    const ctx = makeContext(ctxOverrides)
+    const result = await applyBatch(batch, ctx)
+    if (!ctx.dryRun) {
+      for (const r of result.results) if (r.success) applyChangesToStore(r.changes)
+    }
+    return result
+  })
 }

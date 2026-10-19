@@ -8,7 +8,10 @@ import { toISODate } from './weekUtils'
 export interface StartSessionParams {
   routine?: Routine
   taskDefsById: Map<ID, TaskDef>
-  /** Ordered taskDefIds to seed from when there's no routine — e.g. starting a session from a plan bucket. */
+  /**
+   * Ordered taskDefIds to seed from. Overrides the routine's own list when
+   * given — used for plan buckets and for a routine plus its next-run extras.
+   */
   adHocTaskDefIds?: ID[]
   name?: string
   now: Date
@@ -18,9 +21,9 @@ export function startSession(params: StartSessionParams): Session {
   const { routine, taskDefsById, adHocTaskDefIds, name, now } = params
   const nowISOTime: ISODateTimeString = now.toISOString()
 
-  const sourceTaskDefIds = routine
-    ? [...routine.taskRefs].sort((a, b) => a.order - b.order).map((ref) => ref.taskDefId)
-    : (adHocTaskDefIds ?? [])
+  const sourceTaskDefIds =
+    adHocTaskDefIds ??
+    (routine ? [...routine.taskRefs].sort((a, b) => a.order - b.order).map((ref) => ref.taskDefId) : [])
 
   const taskEntries: SessionTaskEntry[] = sourceTaskDefIds.map((taskDefId, index) => {
     const def = taskDefsById.get(taskDefId)
@@ -61,6 +64,47 @@ export function startSession(params: StartSessionParams): Session {
     pausedIntervals: [],
     state: 'in_progress',
     dateKey: toISODate(now),
+  }
+}
+
+/**
+ * Appends library tasks to a session already under way, in the given order,
+ * skipping any already in it. A subtask nests under its parent's entry when
+ * the parent is (or becomes) part of the session.
+ */
+export function addLibraryTasks(session: Session, orderedTaskDefIds: ID[], taskDefsById: Map<ID, TaskDef>): Session {
+  const present = new Set(session.taskEntries.map((e) => e.taskDefId).filter(Boolean))
+  let order = session.taskEntries.length ? Math.max(...session.taskEntries.map((e) => e.order)) + 1 : 0
+  const added: SessionTaskEntry[] = []
+  for (const taskDefId of orderedTaskDefIds) {
+    const def = taskDefsById.get(taskDefId)
+    if (!def || present.has(taskDefId)) continue
+    present.add(taskDefId)
+    added.push({
+      id: newId(),
+      taskDefId,
+      label: def.label,
+      hobbyIds: def.hobbyIds,
+      skillIds: def.skillIds,
+      status: 'pending',
+      order: order++,
+      isAdHoc: false,
+    })
+  }
+  if (added.length === 0) return session
+
+  const entries = [...session.taskEntries, ...added]
+  const entryIdByTaskDefId = new Map(entries.filter((e) => e.taskDefId).map((e) => [e.taskDefId, e.id]))
+  for (const entry of added) {
+    const parentId = taskDefsById.get(entry.taskDefId!)?.parentId
+    const parentEntryId = parentId ? entryIdByTaskDefId.get(parentId) : undefined
+    if (parentEntryId) entry.parentEntryId = parentEntryId
+  }
+  return {
+    ...session,
+    taskEntries: entries,
+    hobbyIds: Array.from(new Set([...session.hobbyIds, ...added.flatMap((e) => e.hobbyIds)])),
+    skillIds: Array.from(new Set([...session.skillIds, ...added.flatMap((e) => e.skillIds)])),
   }
 }
 

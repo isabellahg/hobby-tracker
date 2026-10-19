@@ -10,6 +10,10 @@ import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { EmptyState } from '../../components/EmptyState'
 import { InlineEdit } from '../../components/InlineEdit'
 import { ChildMeter, SubtaskQuickAdd } from '../../components/Subtasks'
+import { EnterForm } from '../../components/EnterForm'
+import { Panel } from '../../components/Panel'
+import { TaskTagPicker } from '../../components/TaskTagPicker'
+import { MediaStrip } from '../../components/MediaStrip'
 import type { SessionTaskEntry } from '../../domain/types/session'
 import { SessionSummaryCard } from './SessionSummaryCard'
 import { sessionTitle } from './sessionTitle'
@@ -19,6 +23,9 @@ export function SessionRunnerScreen() {
   const navigate = useNavigate()
   const session = useAppStore((s) => s.sessions.find((x) => x.id === id))
   const routines = useAppStore((s) => s.routines)
+  const allHobbies = useAppStore((s) => s.hobbies)
+  const allSkills = useAppStore((s) => s.skills)
+  const allTaskDefs = useAppStore((s) => s.taskDefs)
   const [adHocLabel, setAdHocLabel] = useState('')
   const [confirmingDiscard, setConfirmingDiscard] = useState(false)
   /** Entry currently showing the "split into subtasks" input. */
@@ -51,6 +58,16 @@ export function SessionRunnerScreen() {
   const childMeter = (parentId: string) => {
     const counted = childEntries(parentId).filter((e) => e.status !== 'skipped')
     return <ChildMeter done={counted.filter((e) => e.status === 'completed').length} total={counted.length} />
+  }
+  const hobbies = allHobbies.filter((h) => !h.archived)
+  const skills = allSkills.filter((s) => !s.archived)
+  const inSession = new Set(session.taskEntries.map((e) => e.taskDefId).filter(Boolean))
+  const addableTasks = allTaskDefs
+    .filter((t) => !t.archived && !inSession.has(t.id))
+    .sort((a, b) => a.label.localeCompare(b.label))
+  const toggleId = (ids: string[], id: string) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id])
+  function setTags(hobbyIds: string[], skillIds: string[]) {
+    run({ operation: 'session.setTags', payload: { sessionId: session!.id, hobbyIds, skillIds } })
   }
   const isPaused = session.pausedIntervals.some((p) => !p.resumedAt)
   const pausedSec = Math.floor(totalPausedMs(session, new Date()) / 1000)
@@ -211,23 +228,61 @@ export function SessionRunnerScreen() {
                 </button>
               )}
             </div>
+            <MediaStrip taskDefId={entry.taskDefId} />
             {subtree(entry)}
           </div>
         )}
       />
 
-      <div className="card row">
-        <input
-          type="text"
-          placeholder="Add a task to this session"
-          value={adHocLabel}
-          onChange={(e) => setAdHocLabel(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && addAdHoc()}
-        />
-        <button type="button" className="btn" onClick={addAdHoc}>
-          Add
-        </button>
+      <div className="card stack stack-sm">
+        <EnterForm className="row" onSubmit={addAdHoc}>
+          <input
+            type="text"
+            enterKeyHint="go"
+            aria-label="New task for this session"
+            placeholder="Add a task to this session"
+            value={adHocLabel}
+            onChange={(e) => setAdHocLabel(e.target.value)}
+          />
+          <button type="submit" className="btn">
+            Add
+          </button>
+        </EnterForm>
+        {addableTasks.length > 0 && (
+          <select
+            aria-label="Add a task from your backlog"
+            value=""
+            onChange={(e) => {
+              if (e.target.value) {
+                run({ operation: 'session.addTask', payload: { sessionId: session.id, taskDefId: e.target.value } })
+              }
+            }}
+          >
+            <option value="">+ from your backlog…</option>
+            {addableTasks.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
+
+      <Panel
+        title="Tags"
+        icon="#"
+        defaultOpen={session.hobbyIds.length + session.skillIds.length === 0}
+        description="What did this session practise? Tasks from your backlog bring their own tags."
+      >
+        <TaskTagPicker
+          hobbies={hobbies}
+          skills={skills}
+          selectedHobbyIds={session.hobbyIds}
+          selectedSkillIds={session.skillIds}
+          onToggleHobby={(id) => setTags(toggleId(session.hobbyIds, id), session.skillIds)}
+          onToggleSkill={(id) => setTags(session.hobbyIds, toggleId(session.skillIds, id))}
+        />
+      </Panel>
 
       <div className="row">
         <button type="button" className="btn btn-primary" onClick={finish}>

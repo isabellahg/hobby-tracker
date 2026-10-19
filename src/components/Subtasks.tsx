@@ -4,6 +4,7 @@ import { run } from '../state/actions'
 import { childProgress, childrenOf } from '../domain/logic/taskTree'
 import type { TaskDef } from '../domain/types/taskDef'
 import { InlineEdit } from './InlineEdit'
+import { EnterForm } from './EnterForm'
 
 /** `2/5` with a thin violet bar; nothing when there's nothing to count. */
 export function ChildMeter({ done, total }: { done: number; total: number }) {
@@ -31,23 +32,29 @@ export function SubtaskQuickAdd({
 }) {
   const [draft, setDraft] = useState('')
   return (
-    <input
-      type="text"
-      className="subtask-input"
-      autoFocus
-      aria-label="New subtask"
-      placeholder={placeholder}
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onClick={(e) => e.stopPropagation()}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' && draft.trim()) {
-          onAdd(draft.trim())
-          setDraft('')
-        } else if (e.key === 'Escape') onClose()
+    <EnterForm
+      onSubmit={() => {
+        if (!draft.trim()) return
+        onAdd(draft.trim())
+        setDraft('')
       }}
-      onBlur={() => !draft.trim() && onClose()}
-    />
+    >
+      <input
+        type="text"
+        className="subtask-input"
+        autoFocus
+        enterKeyHint="go"
+        aria-label="New subtask"
+        placeholder={placeholder}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') onClose()
+        }}
+        onBlur={() => !draft.trim() && onClose()}
+      />
+    </EnterForm>
   )
 }
 

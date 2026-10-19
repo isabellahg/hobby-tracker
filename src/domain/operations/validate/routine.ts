@@ -31,3 +31,9 @@ export const routineReorderTasksSchema = z.object({
   id: z.string().min(1),
   orderedTaskRefIds: z.array(z.string()).min(1),
 })
+
+/** Used by addExtraTask, removeExtraTask and keepExtraTask. */
+export const routineExtraTaskSchema = z.object({
+  routineId: z.string().min(1),
+  taskDefId: z.string().min(1),
+})

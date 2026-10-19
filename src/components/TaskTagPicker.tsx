@@ -22,13 +22,15 @@ export function TaskTagPicker({
   skills: Skill[]
   selectedHobbyIds: string[]
   selectedSkillIds: string[]
-  kind: TaskKind
+  /** Omit (with onChangeKind) to show only the hobby/skill pickers, e.g. for tagging a session. */
+  kind?: TaskKind
   onToggleHobby: (id: string) => void
   onToggleSkill: (id: string) => void
-  onChangeKind: (kind: TaskKind) => void
+  onChangeKind?: (kind: TaskKind) => void
 }) {
   return (
     <div>
+      {kind && onChangeKind && (
       <div className="field">
         <label>Type</label>
         <div className="row wrap" role="radiogroup" aria-label="Task type">
@@ -48,6 +50,7 @@ export function TaskTagPicker({
         </div>
         <span className="field-hint">{KIND_OPTIONS.find((o) => o.kind === kind)?.hint}</span>
       </div>
+      )}
       {hobbies.length > 0 && (
         <div className="field">
           <label>Hobby</label>

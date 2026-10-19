@@ -1,5 +1,6 @@
 import {
   addAdHocTask,
+  addLibraryTasks,
   addSubtaskEntry,
   discardSession,
   finishSession,
@@ -22,6 +23,8 @@ import type { OperationContext } from '../context'
 import type {
   sessionAddAdHocTaskSchema,
   sessionAddSubtaskSchema,
+  sessionAddTaskSchema,
+  sessionSetTagsSchema,
   sessionEntryIdSchema,
   sessionFinishSchema,
   sessionIdSchema,
@@ -48,6 +51,21 @@ function resolveWhen(override: string | undefined, fallback: Date): Date {
   return parsed
 }
 
+/** Each id followed by its open subtasks, deduplicated, order preserved. */
+function withOpenSubtasks(allTaskDefs: TaskDef[], ids: string[]): string[] {
+  const out: string[] = []
+  for (const id of ids) {
+    const subtree = [id, ...descendantsOf(allTaskDefs, id).filter((t) => !t.archived).map((t) => t.id)]
+    for (const x of subtree) if (!out.includes(x)) out.push(x)
+  }
+  return out
+}
+
+/**
+ * Starts a session from a routine (its own tasks, then any next-run extras
+ * with their open subtasks — the extras are then cleared) or a blank
+ * flexible session.
+ */
 export async function handleSessionStart(
   payload: z.infer<typeof sessionStartSchema>,
   ctx: OperationContext,
@@ -56,16 +74,62 @@ export async function handleSessionStart(
   if (payload.routineId && !routine) {
     throw new Error(`Routine ${payload.routineId} not found`)
   }
-  const taskDefIds = routine ? routine.taskRefs.map((r) => r.taskDefId) : []
-  const taskDefs = await taskDefRepo.getByIds(taskDefIds)
-  const taskDefsById = new Map(taskDefs.map((d) => [d.id, d]))
+  const allTaskDefs = await taskDefRepo.getAll()
+  const taskDefsById = new Map(allTaskDefs.map((d) => [d.id, d]))
+  const ownIds = routine ? [...routine.taskRefs].sort((a, b) => a.order - b.order).map((r) => r.taskDefId) : []
+  const extras = routine?.extraTaskRefs ?? []
+  const extraIds = withOpenSubtasks(
+    allTaskDefs,
+    [...extras].sort((a, b) => a.order - b.order).map((r) => r.taskDefId),
+  )
+  const orderedIds = [...ownIds, ...extraIds.filter((id) => !ownIds.includes(id))]
   const startedAt = resolveWhen(payload.occurredAt, ctx.now)
 
-  const session = startSession({ routine, taskDefsById, now: startedAt })
+  const session = startSession({ routine, taskDefsById, adHocTaskDefIds: orderedIds, now: startedAt })
   await sessionRepo.put(session)
+  const changes: ChangedRecord[] = [{ store: 'sessions', id: session.id, changeType: 'created', after: session }]
+
+  if (routine && extras.length > 0) {
+    const cleared = { ...routine, extraTaskRefs: [], updatedAt: ctx.now.toISOString() }
+    await routineRepo.put(cleared)
+    changes.push({ store: 'routines', id: routine.id, changeType: 'updated', before: routine, after: cleared })
+  }
   return {
-    changes: [{ store: 'sessions', id: session.id, changeType: 'created', after: session }],
+    changes,
     summary: routine ? `Start session from routine "${routine.name}"` : 'Start a flexible session',
+  }
+}
+
+export async function handleSessionAddTask(
+  payload: z.infer<typeof sessionAddTaskSchema>,
+): Promise<{ changes: ChangedRecord[]; summary: string }> {
+  const existing = await requireSession(payload.sessionId)
+  if (existing.state !== 'in_progress') throw new Error('Tasks can only be added to a session in progress')
+  const allTaskDefs = await taskDefRepo.getAll()
+  const task = allTaskDefs.find((t) => t.id === payload.taskDefId)
+  if (!task || task.archived) throw new Error(`Task ${payload.taskDefId} not found`)
+  const updated = addLibraryTasks(
+    existing,
+    withOpenSubtasks(allTaskDefs, [task.id]),
+    new Map(allTaskDefs.map((d) => [d.id, d])),
+  )
+  if (updated === existing) return { changes: [], summary: `"${task.label}" is already in this session` }
+  await sessionRepo.put(updated)
+  return {
+    changes: [{ store: 'sessions', id: updated.id, changeType: 'updated', before: existing, after: updated }],
+    summary: `Add "${task.label}" to the session`,
+  }
+}
+
+export async function handleSessionSetTags(
+  payload: z.infer<typeof sessionSetTagsSchema>,
+): Promise<{ changes: ChangedRecord[]; summary: string }> {
+  const existing = await requireSession(payload.sessionId)
+  const updated = { ...existing, hobbyIds: payload.hobbyIds, skillIds: payload.skillIds }
+  await sessionRepo.put(updated)
+  return {
+    changes: [{ store: 'sessions', id: updated.id, changeType: 'updated', before: existing, after: updated }],
+    summary: `Tag session with ${payload.hobbyIds.length} hobby and ${payload.skillIds.length} skill tag(s)`,
   }
 }
 
@@ -174,12 +238,17 @@ export async function handleSessionFinish(
 
   await sessionRepo.put(finished)
 
-  // One-off tasks leave the backlog once actually completed in a session
-  // planned from Home. Routine sessions are skipped: a routine's tasks are
-  // template members meant to repeat, and archiving them would gut it.
-  if (!finished.routineId) {
+  // One-off tasks leave the backlog once actually completed. A routine's own
+  // tasks (and their subtasks) are template members meant to repeat, so they
+  // stay — but a task only added for this run of the routine is fair game.
+  const routine = finished.routineId ? await routineRepo.getById(finished.routineId) : undefined
+  const allTaskDefs = routine ? await taskDefRepo.getAll() : []
+  const routineMemberIds = new Set(
+    (routine?.taskRefs ?? []).flatMap((r) => [r.taskDefId, ...descendantsOf(allTaskDefs, r.taskDefId).map((t) => t.id)]),
+  )
+  {
     const completedTaskDefIds = finished.taskEntries
-      .filter((e) => e.status === 'completed' && e.taskDefId)
+      .filter((e) => e.status === 'completed' && e.taskDefId && !routineMemberIds.has(e.taskDefId))
       .map((e) => e.taskDefId!)
     const taskDefs = await taskDefRepo.getByIds(completedTaskDefIds)
     for (const taskDef of taskDefs) {
@@ -227,11 +296,10 @@ export async function handleSessionStartFromBucket(
   // A bucketed task brings its open subtasks along, right after it.
   const allTaskDefs = await taskDefRepo.getAll()
   const taskDefsById = new Map(allTaskDefs.map((d) => [d.id, d]))
-  const orderedTaskDefIds: string[] = []
-  for (const ref of [...bucket.taskRefs].sort((a, b) => a.order - b.order)) {
-    const subtree = [ref.taskDefId, ...descendantsOf(allTaskDefs, ref.taskDefId).filter((t) => !t.archived).map((t) => t.id)]
-    for (const id of subtree) if (!orderedTaskDefIds.includes(id)) orderedTaskDefIds.push(id)
-  }
+  const orderedTaskDefIds = withOpenSubtasks(
+    allTaskDefs,
+    [...bucket.taskRefs].sort((a, b) => a.order - b.order).map((r) => r.taskDefId),
+  )
   const startedAt = resolveWhen(payload.occurredAt, ctx.now)
 
   const session = startSession({

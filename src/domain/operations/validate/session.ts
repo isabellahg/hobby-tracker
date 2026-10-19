@@ -45,6 +45,19 @@ export const sessionStartFromBucketSchema = z.object({
   occurredAt: z.string().optional(),
 })
 
+/** Adds an existing library task (and its open subtasks) to a session in progress. */
+export const sessionAddTaskSchema = z.object({
+  sessionId: z.string().min(1),
+  taskDefId: z.string().min(1),
+})
+
+/** Replaces the session's hobby/skill tags — how a flexible session gets tagged. */
+export const sessionSetTagsSchema = z.object({
+  sessionId: z.string().min(1),
+  hobbyIds: z.array(z.string()),
+  skillIds: z.array(z.string()),
+})
+
 export const sessionRenameSchema = z.object({
   sessionId: z.string().min(1),
   name: z.string().min(1),

@@ -42,6 +42,7 @@ describe('computeImportDiff', () => {
         sessions: [],
         personalRecords: [],
         planBuckets: [],
+        taskMedia: [],
       },
     }
 
@@ -66,6 +67,7 @@ describe('applyImport', () => {
       sessions: [],
       personalRecords: [],
       planBuckets: [],
+      taskMedia: [],
     },
   }
 

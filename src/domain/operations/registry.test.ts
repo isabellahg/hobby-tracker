@@ -478,3 +478,166 @@ describe('session rename, renameTask, and delete', () => {
     expect(await db.sessions.get(start.changes[0].id)).toBeDefined()
   })
 })
+
+describe('routines on Home: next-run extras', () => {
+  async function makeRoutine(name: string, taskDefIds: string[], ctx = makeContext()) {
+    const res = await applyOperation({ operation: 'routine.create', payload: { name, taskDefIds } }, ctx)
+    return res.changes[0].id
+  }
+
+  it('seeds a session with the routine tasks plus extras, then clears the extras', async () => {
+    const ctx = makeContext()
+    const own = await createTask('Read while waiting', 'recurring', ctx)
+    const extra = await createTask('Draw the dragon', 'once', ctx)
+    const routineId = await makeRoutine('Mientras trabajo', [own], ctx)
+
+    const added = await applyOperation({ operation: 'routine.addExtraTask', payload: { routineId, taskDefId: extra } }, ctx)
+    expect(added.success).toBe(true)
+    expect((await db.routines.get(routineId))?.extraTaskRefs?.map((r) => r.taskDefId)).toEqual([extra])
+
+    const started = await applyOperation({ operation: 'session.start', payload: { routineId } }, ctx)
+    const session = await db.sessions.get(started.changes[0].id)
+    expect(session?.taskEntries.map((e) => e.label)).toEqual(['Read while waiting', 'Draw the dragon'])
+
+    const routine = await db.routines.get(routineId)
+    expect(routine?.extraTaskRefs).toEqual([])
+    expect(routine?.taskRefs.map((r) => r.taskDefId)).toEqual([own])
+  })
+
+  it('archives a completed one-off extra but never a routine member', async () => {
+    const ctx = makeContext()
+    const member = await createTask('Member', 'once', ctx)
+    const extra = await createTask('Extra', 'once', ctx)
+    const routineId = await makeRoutine('R', [member], ctx)
+    await applyOperation({ operation: 'routine.addExtraTask', payload: { routineId, taskDefId: extra } }, ctx)
+    const started = await applyOperation({ operation: 'session.start', payload: { routineId } }, ctx)
+    const sessionId = started.changes[0].id
+    for (const label of ['Member', 'Extra']) {
+      await applyOperation({ operation: 'session.setTaskStatus', payload: { sessionId, label, status: 'completed' } }, ctx)
+    }
+    await applyOperation({ operation: 'session.finish', payload: { sessionId } }, ctx)
+    expect((await db.taskDefs.get(member))?.archived).toBe(false)
+    expect((await db.taskDefs.get(extra))?.archived).toBe(true)
+  })
+
+  it('keepExtraTask promotes an extra into the routine for good', async () => {
+    const ctx = makeContext()
+    const extra = await createTask('Now permanent', 'recurring', ctx)
+    const routineId = await makeRoutine('R', [], ctx)
+    await applyOperation({ operation: 'routine.addExtraTask', payload: { routineId, taskDefId: extra } }, ctx)
+    await applyOperation({ operation: 'routine.keepExtraTask', payload: { routineId, taskDefId: extra } }, ctx)
+    const routine = await db.routines.get(routineId)
+    expect(routine?.taskRefs.map((r) => r.taskDefId)).toEqual([extra])
+    expect(routine?.extraTaskRefs).toEqual([])
+  })
+
+  it('removeExtraTask drops an extra without touching the task', async () => {
+    const ctx = makeContext()
+    const extra = await createTask('Maybe not', 'once', ctx)
+    const routineId = await makeRoutine('R', [], ctx)
+    await applyOperation({ operation: 'routine.addExtraTask', payload: { routineId, taskDefId: extra } }, ctx)
+    await applyOperation({ operation: 'routine.removeExtraTask', payload: { routineId, taskDefId: extra } }, ctx)
+    expect((await db.routines.get(routineId))?.extraTaskRefs).toEqual([])
+    expect((await db.taskDefs.get(extra))?.archived).toBe(false)
+  })
+})
+
+describe('running session: add backlog tasks and tag it', () => {
+  it('adds a library task with its open subtasks nested under it', async () => {
+    const ctx = makeContext()
+    const parent = await createTask('Course', 'ongoing', ctx)
+    const child = await applyOperation(
+      { operation: 'taskDef.create', payload: { label: 'Chapter 1', parentId: parent } },
+      ctx,
+    )
+    const started = await applyOperation({ operation: 'session.start', payload: {} }, ctx)
+    const sessionId = started.changes[0].id
+
+    const res = await applyOperation({ operation: 'session.addTask', payload: { sessionId, taskDefId: parent } }, ctx)
+    expect(res.success).toBe(true)
+    const session = await db.sessions.get(sessionId)
+    const parentEntry = session!.taskEntries.find((e) => e.taskDefId === parent)!
+    const childEntry = session!.taskEntries.find((e) => e.taskDefId === child.changes[0].id)!
+    expect(childEntry.parentEntryId).toBe(parentEntry.id)
+
+    const again = await applyOperation({ operation: 'session.addTask', payload: { sessionId, taskDefId: parent } }, ctx)
+    expect(again.changes).toHaveLength(0)
+  })
+
+  it('refuses to add tasks to a finished session', async () => {
+    const ctx = makeContext()
+    const task = await createTask('Late', 'once', ctx)
+    const started = await applyOperation({ operation: 'session.start', payload: {} }, ctx)
+    const sessionId = started.changes[0].id
+    await applyOperation({ operation: 'session.finish', payload: { sessionId } }, ctx)
+    const res = await applyOperation({ operation: 'session.addTask', payload: { sessionId, taskDefId: task } }, ctx)
+    expect(res.success).toBe(false)
+  })
+
+  it('tags a flexible session', async () => {
+    const ctx = makeContext()
+    const started = await applyOperation({ operation: 'session.start', payload: {} }, ctx)
+    const sessionId = started.changes[0].id
+    await applyOperation({ operation: 'session.setTags', payload: { sessionId, hobbyIds: ['h1'], skillIds: ['s1', 's2'] } }, ctx)
+    const session = await db.sessions.get(sessionId)
+    expect(session?.hobbyIds).toEqual(['h1'])
+    expect(session?.skillIds).toEqual(['s1', 's2'])
+  })
+})
+
+describe('task media', () => {
+  it('attaches a link and a picture, and removes one', async () => {
+    const ctx = makeContext()
+    const task = await createTask('Study refs', 'once', ctx)
+    const link = await applyOperation(
+      { operation: 'taskDef.addMedia', payload: { taskDefId: task, kind: 'link', src: 'https://youtu.be/abc123' } },
+      ctx,
+    )
+    const pic = await applyOperation(
+      { operation: 'taskDef.addMedia', payload: { taskDefId: task, kind: 'image', src: 'data:image/png;base64,iVBORw0KGgo=' } },
+      ctx,
+    )
+    expect(link.success && pic.success).toBe(true)
+    expect(await db.taskMedia.count()).toBe(2)
+
+    await applyOperation({ operation: 'taskDef.removeMedia', payload: { id: link.changes[0].id } }, ctx)
+    expect(await db.taskMedia.count()).toBe(1)
+  })
+
+  it('rejects non-http links and non-image data', async () => {
+    const ctx = makeContext()
+    const task = await createTask('X', 'once', ctx)
+    const js = await applyOperation(
+      { operation: 'taskDef.addMedia', payload: { taskDefId: task, kind: 'link', src: 'javascript:alert(1)' } },
+      ctx,
+    )
+    const html = await applyOperation(
+      { operation: 'taskDef.addMedia', payload: { taskDefId: task, kind: 'image', src: 'data:text/html;base64,PGI+' } },
+      ctx,
+    )
+    expect(js.success).toBe(false)
+    expect(html.success).toBe(false)
+  })
+
+  it('fills in a link title and preview picture after it is attached', async () => {
+    const ctx = makeContext()
+    const task = await createTask('Refs', 'once', ctx)
+    const link = await applyOperation(
+      { operation: 'taskDef.addMedia', payload: { taskDefId: task, kind: 'link', src: 'https://artstation.com/a/1' } },
+      ctx,
+    )
+    const id = link.changes[0].id
+    const updated = await applyOperation(
+      { operation: 'taskDef.updateMedia', payload: { id, title: 'Dragon study', preview: 'https://cdn.example.com/og.jpg' } },
+      ctx,
+    )
+    expect(updated.success).toBe(true)
+    expect(await db.taskMedia.get(id)).toMatchObject({ title: 'Dragon study', preview: 'https://cdn.example.com/og.jpg' })
+
+    const bad = await applyOperation(
+      { operation: 'taskDef.updateMedia', payload: { id, preview: 'javascript:alert(1)' } },
+      ctx,
+    )
+    expect(bad.success).toBe(false)
+  })
+})

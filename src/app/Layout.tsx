@@ -123,7 +123,8 @@ export function Layout() {
             </span>
           ))}
         </div>
-        <main className="app-main">
+        {/* On wide screens Home's columns scroll on their own instead of the whole page. */}
+        <main className={pathname === '/' ? 'app-main app-main-columns' : 'app-main'}>
           <div className="app-main-inner">
             <Outlet />
           </div>

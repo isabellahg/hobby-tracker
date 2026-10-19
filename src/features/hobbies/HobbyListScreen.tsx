@@ -5,6 +5,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { Chip } from '../../components/Chip'
 import { InlineEdit } from '../../components/InlineEdit'
 import { ArchivedSection } from '../../components/ArchivedSection'
+import { EnterForm } from '../../components/EnterForm'
 
 export function HobbyListScreen() {
   const allHobbies = useAppStore((s) => s.hobbies)
@@ -56,19 +57,19 @@ export function HobbyListScreen() {
         </span>
       </div>
 
-      <div className="card row">
+      <EnterForm className="card row" onSubmit={createHobby}>
         <input
           type="text"
+          enterKeyHint="go"
           aria-label="New hobby name"
           placeholder="New hobby name (e.g. Game development)"
           value={newHobbyName}
           onChange={(e) => setNewHobbyName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && createHobby()}
         />
-        <button type="button" className="btn btn-primary" onClick={createHobby}>
+        <button type="submit" className="btn btn-primary">
           Add hobby
         </button>
-      </div>
+      </EnterForm>
       {error && <p className="error">{error}</p>}
 
       {hobbies.length === 0 && <EmptyState>No hobbies yet. Add your first one above.</EmptyState>}
@@ -123,19 +124,19 @@ export function HobbyListScreen() {
                 {hobbySkills.length === 0 && <span className="muted">No skills yet.</span>}
               </div>
 
-              <div className="row">
+              <EnterForm className="row" onSubmit={() => createSkill(hobby.id)}>
                 <input
                   type="text"
+                  enterKeyHint="go"
                   aria-label={`New skill for ${hobby.name}`}
                   placeholder="New skill (e.g. Anatomy)"
                   value={skillDrafts[hobby.id] ?? ''}
                   onChange={(e) => setSkillDrafts((d) => ({ ...d, [hobby.id]: e.target.value }))}
-                  onKeyDown={(e) => e.key === 'Enter' && createSkill(hobby.id)}
                 />
-                <button type="button" className="btn" onClick={() => createSkill(hobby.id)}>
+                <button type="submit" className="btn">
                   Add skill
                 </button>
-              </div>
+              </EnterForm>
             </div>
           )
         })}

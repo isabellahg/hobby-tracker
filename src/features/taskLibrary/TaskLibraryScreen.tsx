@@ -6,6 +6,10 @@ import { Chip } from '../../components/Chip'
 import { TaskTagPicker } from '../../components/TaskTagPicker'
 import { kindLabel } from '../../components/taskKinds'
 import { TaskEditor } from '../../components/TaskEditor'
+import { EnterForm } from '../../components/EnterForm'
+import { MediaList } from '../../components/MediaStrip'
+import { usePendingAttachments } from '../../components/usePendingAttachments'
+import { MediaStrip } from '../../components/MediaStrip'
 import { ArchivedSection } from '../../components/ArchivedSection'
 import { Subtasks } from '../../components/Subtasks'
 import { isTreeRoot } from '../../domain/logic/taskTree'
@@ -26,6 +30,7 @@ export function TaskLibraryScreen() {
   const [selectedHobbyIds, setSelectedHobbyIds] = useState<string[]>([])
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([])
   const [kind, setKind] = useState<TaskKind>('once')
+  const pending = usePendingAttachments((title) => setLabel((l) => (l.trim() ? l : title)))
   const [editingId, setEditingId] = useState<string | null>(null)
 
   function toggleHobby(id: string) {
@@ -36,11 +41,13 @@ export function TaskLibraryScreen() {
   }
 
   async function createTask() {
-    if (!label.trim()) return
-    await run({
+    const name = label.trim() || pending.fallbackLabel()
+    if (!name) return
+    const result = await run({
       operation: 'taskDef.create',
-      payload: { label: label.trim(), hobbyIds: selectedHobbyIds, skillIds: selectedSkillIds, kind },
+      payload: { label: name, hobbyIds: selectedHobbyIds, skillIds: selectedSkillIds, kind },
     })
+    if (result.success) pending.saveTo(result.changes[0].id)
     setLabel('')
     setSelectedHobbyIds([])
     setSelectedSkillIds([])
@@ -66,17 +73,19 @@ export function TaskLibraryScreen() {
         Your backlog. Tasks created here, in a routine, or from Home's quick-add all land in the same place.
       </p>
 
-      <div className="card stack">
-        <div className="field">
+      <EnterForm className="card stack" onSubmit={createTask}>
+        <div className="field" onPaste={pending.onPaste}>
           <label htmlFor="task-label">New task</label>
           <input
             id="task-label"
             type="text"
-            placeholder="e.g. Collect references"
+            enterKeyHint="go"
+            placeholder="e.g. Collect references — or paste a link"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && createTask()}
           />
+          <MediaList items={pending.items} onRemove={pending.remove} />
+          {pending.loading && <span className="field-hint">Fetching preview…</span>}
         </div>
         <TaskTagPicker
           hobbies={hobbies}
@@ -89,11 +98,11 @@ export function TaskLibraryScreen() {
           onChangeKind={setKind}
         />
         <div>
-          <button type="button" className="btn btn-primary" onClick={createTask}>
+          <button type="submit" className="btn btn-primary">
             Add task
           </button>
         </div>
-      </div>
+      </EnterForm>
 
       {taskDefs.length === 0 && <EmptyState>No tasks yet.</EmptyState>}
 
@@ -121,6 +130,7 @@ export function TaskLibraryScreen() {
                     Next: {task.nextAction}
                   </div>
                 )}
+                <MediaStrip taskDefId={task.id} />
                 <Subtasks task={task} allTasks={allTaskDefs} />
               </div>
               <div className="row">
