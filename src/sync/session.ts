@@ -1,15 +1,25 @@
-import Peer, { type DataConnection, type PeerError } from 'peerjs'
+import Peer, { type PeerError } from 'peerjs'
 import { applyImport, exportAllData } from '../storage/exportImport'
 import { metaRepo } from '../storage/repositories'
-import { decideDirection, deviceLabel, isSyncMessage, newPairCode, type Direction, type SyncMessage } from './protocol'
+import { connectToDesktop, desktopHostChannel, peerChannel, webSocketChannel, type SyncChannel } from './channel'
+import {
+  decideDirection,
+  deviceLabel,
+  newPairCode,
+  type Direction,
+  type LanTarget,
+  type SyncMessage,
+} from './protocol'
 
 /** Namespaces our codes on the shared public PeerJS pairing server. */
 const PEER_PREFIX = 'hobbytracker-'
 
 export type SyncPhase =
   | { phase: 'idle' }
-  /** Showing a code/QR, waiting for the other device. */
+  /** Online pairing (web): showing a code/QR, waiting for the other device. */
   | { phase: 'waiting'; code: string }
+  /** Desktop: local server up, waiting for a phone on the same wifi. */
+  | { phase: 'waitingLan'; target: LanTarget }
   | { phase: 'connecting' }
   /** Connected; direction says which way the data would go. */
   | { phase: 'decide'; direction: Direction; mine: string | null; theirs: string | null; device: string }
@@ -17,7 +27,7 @@ export type SyncPhase =
   | { phase: 'done'; received: boolean }
   | { phase: 'error'; message: string }
 
-function errorMessage(err: PeerError<string>): string {
+function peerErrorMessage(err: PeerError<string>): string {
   if (err.type === 'peer-unavailable') return 'No device is showing that code right now.'
   if (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error') {
     return 'Couldn’t reach the pairing server. Both devices need internet for the handshake.'
@@ -27,15 +37,13 @@ function errorMessage(err: PeerError<string>): string {
 }
 
 /**
- * One pairing between two devices. The public server only introduces them;
- * the data itself goes straight from one device to the other (WebRTC), over
- * the local network when they share one.
+ * One pairing between two devices, over whichever channel fits: the desktop's
+ * local server (no internet at all), or PeerJS between two browsers.
  */
 export class SyncSession {
   private peer: Peer | null = null
-  private conn: DataConnection | null = null
+  private channel: SyncChannel | null = null
   private closed = false
-
   private readonly onPhase: (phase: SyncPhase) => void
   /** Called after this device's data was replaced, to reload the app state. */
   private readonly onReplaced: () => Promise<void>
@@ -45,35 +53,62 @@ export class SyncSession {
     this.onReplaced = onReplaced
   }
 
-  /** Shows a fresh code and waits for the other device to join it. */
-  host(): void {
+  /** Desktop app: start the local server and wait for a phone. */
+  async hostLan(bridge: DesktopBridge): Promise<void> {
+    this.reset()
+    this.attach(desktopHostChannel(bridge), () => this.onPhase({ phase: 'connecting' }))
+    try {
+      this.onPhase({ phase: 'waitingLan', target: await bridge.lanStart(newPairCode()) })
+    } catch (err) {
+      this.fail(err instanceof Error ? err.message : 'Couldn’t start the local sync server.')
+    }
+  }
+
+  /** Phone: connect straight to the desktop on the same wifi. */
+  async joinLan(target: LanTarget): Promise<void> {
+    this.reset()
+    this.onPhase({ phase: 'connecting' })
+    try {
+      const socket = await connectToDesktop(target.hosts, target.port, target.code)
+      if (this.closed) {
+        socket.close()
+        return
+      }
+      this.attach(webSocketChannel(socket))
+    } catch (err) {
+      this.fail(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  /** Web: show a fresh code on the public pairing server and wait for the other device. */
+  hostPeer(): void {
     this.reset()
     const code = newPairCode()
     const peer = new Peer(PEER_PREFIX + code)
     this.peer = peer
     peer.on('open', () => this.onPhase({ phase: 'waiting', code }))
     peer.on('connection', (conn) => {
-      if (this.conn) {
+      if (this.channel) {
         conn.close()
         return
       }
       this.onPhase({ phase: 'connecting' })
-      this.attach(conn)
+      this.attach(peerChannel(conn))
     })
     peer.on('error', (err) => {
       // Someone else is using this code — just pick another.
-      if (err.type === 'unavailable-id') this.host()
-      else this.fail(errorMessage(err))
+      if (err.type === 'unavailable-id') this.hostPeer()
+      else this.fail(peerErrorMessage(err))
     })
   }
 
-  join(code: string): void {
+  joinPeer(code: string): void {
     this.reset()
     this.onPhase({ phase: 'connecting' })
     const peer = new Peer()
     this.peer = peer
-    peer.on('open', () => this.attach(peer.connect(PEER_PREFIX + code, { reliable: true })))
-    peer.on('error', (err) => this.fail(errorMessage(err)))
+    peer.on('open', () => this.attach(peerChannel(peer.connect(PEER_PREFIX + code, { reliable: true }))))
+    peer.on('error', (err) => this.fail(peerErrorMessage(err)))
   }
 
   /** The older side agreed to be overwritten: ask for the data. */
@@ -88,9 +123,9 @@ export class SyncSession {
   }
 
   private reset(): void {
-    this.conn?.close()
+    this.channel?.close()
     this.peer?.destroy()
-    this.conn = null
+    this.channel = null
     this.peer = null
   }
 
@@ -101,20 +136,21 @@ export class SyncSession {
   }
 
   private send(msg: SyncMessage): void {
-    this.conn?.send(msg)
+    this.channel?.send(msg)
   }
 
-  private attach(conn: DataConnection): void {
-    this.conn = conn
-    conn.on('open', async () => {
+  private attach(channel: SyncChannel, onOpen?: () => void): void {
+    this.channel = channel
+    channel.onOpen(async () => {
+      onOpen?.()
       this.send({ type: 'hello', changedAt: await metaRepo.getLastChangedAt(), device: deviceLabel(navigator.userAgent) })
     })
-    conn.on('data', (data) => {
-      if (isSyncMessage(data)) this.handle(data).catch((err) => this.fail(err instanceof Error ? err.message : String(err)))
+    channel.onMessage((msg) => {
+      this.handle(msg).catch((err) => this.fail(err instanceof Error ? err.message : String(err)))
     })
-    conn.on('error', (err) => this.fail(err.message))
-    conn.on('close', () => {
-      if (this.conn === conn) this.conn = null
+    channel.onError((message) => this.fail(message))
+    channel.onClose(() => {
+      if (this.channel === channel) this.channel = null
     })
   }
 

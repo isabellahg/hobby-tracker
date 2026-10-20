@@ -53,3 +53,33 @@ export function deviceLabel(userAgent: string): string {
   if (/Android|iPhone|Mobile/i.test(userAgent)) return 'phone'
   return 'computer'
 }
+
+/** Where a desktop's local sync server listens: every address it has on the network, one port, one code. */
+export interface LanTarget {
+  hosts: string[]
+  port: number
+  code: string
+}
+
+/** What the desktop's QR code holds. */
+export function lanLink(t: LanTarget): string {
+  return `hobbytracker://lan?h=${t.hosts.join(',')}&p=${t.port}&c=${t.code}`
+}
+
+const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/
+
+/** Reads a scanned desktop QR, or a typed "192.168.1.5:47321 ABC234". */
+export function parseLanTarget(text: string): LanTarget | null {
+  const link = /^hobbytracker:\/\/lan\?(.*)$/.exec(text.trim())
+  if (link) {
+    const params = new URLSearchParams(link[1])
+    const hosts = (params.get('h') ?? '').split(',').filter((h) => IPV4.test(h))
+    const port = Number(params.get('p'))
+    const code = parsePairCode(params.get('c') ?? '')
+    return hosts.length > 0 && Number.isInteger(port) && port > 0 && code ? { hosts, port, code } : null
+  }
+  const typed = /^(\d{1,3}(?:\.\d{1,3}){3}):(\d{2,5})\s+(\S+)$/.exec(text.trim())
+  if (!typed) return null
+  const code = parsePairCode(typed[3])
+  return code ? { hosts: [typed[1]], port: Number(typed[2]), code } : null
+}

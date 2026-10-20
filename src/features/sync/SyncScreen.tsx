@@ -4,12 +4,19 @@ import { formatDistanceToNow, parseISO } from 'date-fns'
 import QRCode from 'qrcode'
 import { useAppStore } from '../../state/store'
 import { EnterForm } from '../../components/EnterForm'
-import { parsePairCode } from '../../sync/protocol'
+import { lanLink, parseLanTarget, parsePairCode } from '../../sync/protocol'
 import { SyncSession, type SyncPhase } from '../../sync/session'
 import { QrScanner } from './QrScanner'
 
 function ago(iso: string | null): string {
   return iso ? `${formatDistanceToNow(parseISO(iso))} ago` : 'never'
+}
+
+const QR_OPTIONS = { margin: 1, width: 220, color: { dark: '#1e1e1e', light: '#ececec' } }
+
+/** True when typed or scanned text points at a device we can join. */
+function joinable(text: string): boolean {
+  return parseLanTarget(text) !== null || parsePairCode(text) !== null
 }
 
 /** The link a phone camera can open straight into joining this code. */
@@ -42,23 +49,33 @@ export function SyncScreen() {
     const code = parsePairCode(params.get('join') ?? '')
     if (!code) return
     setParams({}, { replace: true })
-    session().join(code)
+    session().joinPeer(code)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
-    if (phase.phase !== 'waiting') return
-    QRCode.toDataURL(joinLink(phase.code), { margin: 1, width: 220, color: { dark: '#1e1e1e', light: '#ececec' } })
+    const content =
+      phase.phase === 'waiting' ? joinLink(phase.code) : phase.phase === 'waitingLan' ? lanLink(phase.target) : null
+    if (!content) return
+    QRCode.toDataURL(content, QR_OPTIONS)
       .then(setQr)
       .catch(() => setQr(null))
   }, [phase])
 
+  /** A desktop's local address (no internet needed), or an online pair code. */
   function join(text: string) {
-    const code = parsePairCode(text)
-    if (!code) return
+    const lan = parseLanTarget(text)
+    const code = lan ? null : parsePairCode(text)
+    if (!lan && !code) return
     setScanning(false)
     setTyped('')
-    session().join(code)
+    if (lan) session().joinLan(lan)
+    else session().joinPeer(code!)
+  }
+
+  function show() {
+    if (window.desktop) session().hostLan(window.desktop)
+    else session().hostPeer()
   }
 
   function restart() {
@@ -76,23 +93,28 @@ export function SyncScreen() {
       <p className="desc m0">
         Copy everything between two devices. No merging: whichever device changed something last wins and replaces
         the other — you're asked before anything is overwritten. The data goes straight from device to device; a
-        public server only helps them find each other.
+        public server only helps them find each other — and with the desktop app, not even that: the phone talks to it
+        straight over your wifi.
       </p>
 
       {phase.phase === 'idle' && (
         <div className="sync-grid">
           <div className="card stack stack-sm">
             <h3 className="m0">Show a code</h3>
-            <p className="desc m0">On this device. Then scan it with the other one.</p>
+            <p className="desc m0">
+              {window.desktop
+                ? 'On this computer. Then scan it with the phone app — both on the same wifi.'
+                : 'On this device. Then scan it with the other one.'}
+            </p>
             <div>
-              <button type="button" className="btn btn-primary" onClick={() => session().host()}>
+              <button type="button" className="btn btn-primary" onClick={show}>
                 Show code
               </button>
             </div>
           </div>
           <div className="card stack stack-sm">
             <h3 className="m0">Join a code</h3>
-            <p className="desc m0">Scan the QR on the other device, or type its code.</p>
+            <p className="desc m0">Scan the QR on the other device, or type what it shows.</p>
             {scanning ? (
               <>
                 <QrScanner onScan={join} />
@@ -112,15 +134,15 @@ export function SyncScreen() {
             <EnterForm className="row" onSubmit={() => join(typed)}>
               <input
                 type="text"
-                aria-label="Pair code"
-                placeholder="ABC234"
+                aria-label="Pair code or computer address"
+                placeholder="ABC234 or 192.168.1.5:47321 ABC234"
                 autoCapitalize="characters"
                 autoComplete="off"
-                className="sync-code-input"
+                className="sync-code-input grow"
                 value={typed}
                 onChange={(e) => setTyped(e.target.value)}
               />
-              <button type="submit" className="btn" disabled={!parsePairCode(typed)}>
+              <button type="submit" className="btn" disabled={!joinable(typed)}>
                 Join
               </button>
             </EnterForm>
@@ -135,6 +157,27 @@ export function SyncScreen() {
             {phase.code}
           </p>
           <p className="desc m0">Scan this with the other device (Sync → Scan QR), or type the code there.</p>
+          <div>
+            <button type="button" className="btn" onClick={restart}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {phase.phase === 'waitingLan' && (
+        <div className="card stack stack-sm sync-show">
+          {qr && <img src={qr} alt={`QR code for pair code ${phase.target.code}`} className="sync-qr" />}
+          <p className="sync-code" aria-label="Pair code">
+            {phase.target.code}
+          </p>
+          <p className="desc m0">
+            Scan this with the phone app (Sync → Scan QR) on the same wifi, or type{' '}
+            <span className="strong">
+              {phase.target.hosts[0]}:{phase.target.port} {phase.target.code}
+            </span>
+            .
+          </p>
           <div>
             <button type="button" className="btn" onClick={restart}>
               Cancel

@@ -2495,8 +2495,8 @@ input.subtask-input {
 }
 
 .sync-code-input {
-  width: 8rem;
-  letter-spacing: 0.2em;
+  min-width: 0;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 

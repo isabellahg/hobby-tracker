@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decideDirection, deviceLabel, newPairCode, parsePairCode } from './protocol'
+import { decideDirection, deviceLabel, lanLink, newPairCode, parseLanTarget, parsePairCode } from './protocol'
 
 describe('decideDirection', () => {
   it('sends when this device changed last', () => {
@@ -35,5 +35,21 @@ describe('deviceLabel', () => {
   it('guesses phone vs computer', () => {
     expect(deviceLabel('Mozilla/5.0 (Linux; Android 14) Mobile')).toBe('phone')
     expect(deviceLabel('Mozilla/5.0 (Windows NT 10.0; Win64; x64)')).toBe('computer')
+  })
+})
+
+describe('LAN targets', () => {
+  it('round-trips the desktop QR', () => {
+    const t = { hosts: ['192.168.1.5', '10.0.0.3'], port: 47321, code: 'ABC234' }
+    expect(parseLanTarget(lanLink(t))).toEqual(t)
+  })
+
+  it('reads a typed address and code', () => {
+    expect(parseLanTarget('192.168.1.5:47321 abc234')).toEqual({ hosts: ['192.168.1.5'], port: 47321, code: 'ABC234' })
+  })
+
+  it('rejects pair links and junk', () => {
+    expect(parseLanTarget('https://x/#/sync?join=ABC234')).toBeNull()
+    expect(parseLanTarget('hobbytracker://lan?h=nope&p=1&c=ABC234')).toBeNull()
   })
 })
