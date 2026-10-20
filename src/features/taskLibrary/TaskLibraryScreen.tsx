@@ -12,6 +12,7 @@ import { usePendingAttachments } from '../../components/usePendingAttachments'
 import { MediaStrip } from '../../components/MediaStrip'
 import { ArchivedSection } from '../../components/ArchivedSection'
 import { Subtasks } from '../../components/Subtasks'
+import { MoveToSelect } from '../../components/ListBits'
 import { isTreeRoot } from '../../domain/logic/taskTree'
 import type { TaskKind } from '../../domain/types/taskDef'
 
@@ -70,7 +71,8 @@ export function TaskLibraryScreen() {
         </span>
       </div>
       <p className="desc m0">
-        Your backlog. Tasks created here, in a routine, or from Home's quick-add all land in the same place.
+        Every task, wherever it lives. Use the picker on a task to move it to the backlog, Habits, or one of
+        your lists.
       </p>
 
       <EnterForm className="card stack" onSubmit={createTask}>
@@ -134,6 +136,7 @@ export function TaskLibraryScreen() {
                 <Subtasks task={task} allTasks={allTaskDefs} />
               </div>
               <div className="row">
+                <MoveToSelect task={task} />
                 <button type="button" className="btn" onClick={() => setEditingId(task.id)}>
                   Edit
                 </button>

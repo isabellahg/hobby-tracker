@@ -16,8 +16,11 @@ import {
   handleTaskDefArchive,
   handleTaskDefCreate,
   handleTaskDefFinish,
+  handleTaskDefMoveTo,
+  handleTaskDefSetStatus,
   handleTaskDefUpdate,
 } from './handlers/taskDefOps'
+import { handleListArchive, handleListCreate, handleListRename, handleListReorder } from './handlers/listOps'
 import {
   handleRoutineAddExtraTask,
   handleRoutineArchive,
@@ -84,6 +87,12 @@ const handlers: Record<OperationName, RegistryEntry> = {
   'taskDef.update': { schema: v.taskDefUpdateSchema, handle: handleTaskDefUpdate },
   'taskDef.archive': { schema: v.taskDefArchiveSchema, handle: handleTaskDefArchive },
   'taskDef.finish': { schema: v.taskDefFinishSchema, handle: handleTaskDefFinish },
+  'taskDef.setStatus': { schema: v.taskDefSetStatusSchema, handle: handleTaskDefSetStatus },
+  'taskDef.moveTo': { schema: v.taskDefMoveToSchema, handle: handleTaskDefMoveTo },
+  'list.create': { schema: v.listCreateSchema, handle: handleListCreate },
+  'list.rename': { schema: v.listRenameSchema, handle: handleListRename },
+  'list.archive': { schema: v.listArchiveSchema, handle: handleListArchive },
+  'list.reorder': { schema: v.listReorderSchema, handle: handleListReorder },
   'taskDef.addMedia': { schema: v.taskAddMediaSchema, handle: handleTaskAddMedia },
   'taskDef.removeMedia': { schema: v.taskRemoveMediaSchema, handle: handleTaskRemoveMedia },
   'taskDef.updateMedia': { schema: v.taskUpdateMediaSchema, handle: handleTaskUpdateMedia },

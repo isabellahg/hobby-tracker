@@ -8,6 +8,8 @@ import type { Session } from '../domain/types/session'
 import type { PersonalRecord } from '../domain/types/record'
 import type { PlanBucket } from '../domain/types/planBucket'
 import type { TaskMedia } from '../domain/types/taskMedia'
+import type { ItemList } from '../domain/types/list'
+import { DEFAULT_HABIT } from '../domain/logic/habits'
 
 export interface MetaRow {
   key: string
@@ -39,6 +41,7 @@ export class HobbyTrackerDB extends Dexie {
   meta!: Table<MetaRow, string>
   planBuckets!: Table<PlanBucket, string>
   taskMedia!: Table<TaskMedia, string>
+  lists!: Table<ItemList, string>
 
   constructor(name = 'HobbyTrackerDB') {
     super(name)
@@ -111,6 +114,24 @@ export class HobbyTrackerDB extends Dexie {
     this.version(5).stores({
       taskMedia: 'id, taskDefId',
     })
+
+    // v6: user lists (reading, watch…); recurring tasks became habits with a
+    // status and a target frequency.
+    this.version(6)
+      .stores({
+        lists: 'id, order',
+        taskDefs: 'id, *hobbyIds, *skillIds, archived, listId',
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table('taskDefs')
+          .toCollection()
+          .modify((taskDef: TaskDef) => {
+            if (taskDef.kind !== 'recurring') return
+            if (!taskDef.status) taskDef.status = 'ongoing'
+            if (!taskDef.habit) taskDef.habit = { ...DEFAULT_HABIT }
+          })
+      })
   }
 }
 
@@ -126,6 +147,7 @@ export const ALL_TABLE_NAMES = [
   'personalRecords',
   'planBuckets',
   'taskMedia',
+  'lists',
 ] as const
 
 export type TableName = (typeof ALL_TABLE_NAMES)[number]

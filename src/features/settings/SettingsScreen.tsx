@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { db } from '../../storage/db'
 import { useAppStore } from '../../state/store'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { ListsSettings } from './ListsSettings'
 
 export function SettingsScreen() {
   const load = useAppStore((s) => s.load)
@@ -20,6 +21,8 @@ export function SettingsScreen() {
       <div className="page-header">
         <h2>Settings</h2>
       </div>
+
+      <ListsSettings />
 
       <div className="card">
         <h3>About</h3>

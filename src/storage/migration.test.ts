@@ -52,4 +52,23 @@ describe('schema upgrade from v2', () => {
     expect(await db.sessions.get('s1')).toBeDefined()
     db.close()
   })
+
+  it('turns recurring tasks into active habits with a default frequency', async () => {
+    const name = 'MigrationTestDB-habits'
+    const legacy = new Dexie(name)
+    legacy.version(2).stores(V2_STORES)
+    await legacy.open()
+    await legacy.table('taskDefs').put({ id: 't1', label: 'scales', hobbyIds: [], skillIds: [], isRecurring: true, archived: false })
+    legacy.close()
+
+    const db = new HobbyTrackerDB(name)
+    await db.open()
+    expect(await db.taskDefs.get('t1')).toMatchObject({
+      kind: 'recurring',
+      status: 'ongoing',
+      habit: { period: 'week', min: 1, avg: 2, amazing: 3 },
+    })
+    expect(await db.lists.count()).toBe(0)
+    db.close()
+  })
 })

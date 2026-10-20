@@ -256,7 +256,7 @@ export async function handleSessionFinish(
  * One-off tasks leave the backlog once actually completed in a finished
  * session. A routine's own tasks (and their subtasks) are template members
  * meant to repeat, so they stay — but a task only added for this run of the
- * routine is fair game.
+ * routine is fair game. A list item is marked done on its list instead.
  */
 async function closeCompletedOneOffs(session: Session, completedTaskDefIds: string[], now: Date): Promise<ChangedRecord[]> {
   const routine = session.routineId ? await routineRepo.getById(session.routineId) : undefined
@@ -271,6 +271,14 @@ async function closeCompletedOneOffs(session: Session, completedTaskDefIds: stri
     // Re-read: an earlier parent in this loop may already have closed it.
     const current = await taskDefRepo.getById(taskDef.id)
     if (!current || current.archived) continue
+    if (current.listId) {
+      // A list item is never thrown away: it's done, and off the backlog.
+      const stamp = now.toISOString()
+      const done: TaskDef = { ...current, status: 'done', statusAt: stamp, inBacklog: false, updatedAt: stamp }
+      await taskDefRepo.put(done)
+      changes.push({ store: 'taskDefs', id: done.id, changeType: 'updated', before: current, after: done })
+      continue
+    }
     changes.push(...(await archiveTaskTree(current, now)))
   }
   return changes

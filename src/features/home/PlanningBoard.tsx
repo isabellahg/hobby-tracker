@@ -25,6 +25,9 @@ import { MediaList } from '../../components/MediaStrip'
 import { usePendingAttachments } from '../../components/usePendingAttachments'
 import { MediaStrip } from '../../components/MediaStrip'
 import { ChildMeter, Subtasks } from '../../components/Subtasks'
+import { HabitMeter, StaleNudge } from '../../components/ListBits'
+import { partitionBacklog, staleWeeks } from '../../domain/logic/listItems'
+import { habitProgress } from '../../domain/logic/habits'
 import type { PlanBucket } from '../../domain/types/planBucket'
 import type { Routine } from '../../domain/types/routine'
 import type { Session } from '../../domain/types/session'
@@ -71,6 +74,7 @@ export function PlanningBoard() {
   const sessions = useAppStore((s) => s.sessions)
   const allRoutines = useAppStore((s) => s.routines)
   const plan = useAppStore((s) => s.weeklyPlan)
+  const lists = useAppStore((s) => s.lists)
 
   const taskDefs = allTaskDefs.filter((t) => !t.archived)
   const hobbies = allHobbies.filter((h) => !h.archived)
@@ -82,7 +86,8 @@ export function PlanningBoard() {
   const skillById = new Map(allSkills.map((s) => [s.id, s]))
   const running = sessions.filter((s) => s.state === 'in_progress')
 
-  const [todayDow] = useState(() => getDayOfWeek(new Date()))
+  const [now] = useState(() => new Date())
+  const todayDow = getDayOfWeek(now)
   const plannedToday = new Set(plan.assignments[todayDow] ?? [])
   const routines = allRoutines
     .filter((r) => !r.archived)
@@ -116,8 +121,11 @@ export function PlanningBoard() {
   }
 
   const activity = taskActivity(sessions, allTaskDefs, rootTasks)
+  // Habits and ongoing list items get their own strips; the rest is the plain backlog.
+  const partition = partitionBacklog(rootTasks, lists)
+  const listById = new Map(lists.map((l) => [l.id, l]))
   const sections = groupBacklog(
-    sortBacklog(rootTasks, activity, view.sort),
+    sortBacklog(partition.main, activity, view.sort),
     view.group,
     view.group === 'hobby' ? hobbies : skills,
   )
@@ -315,7 +323,8 @@ export function PlanningBoard() {
         <div className="row row-between">
           <span className="strong">{task.label}</span>
           <div className="row">
-            {task.kind === 'ongoing' && (
+            {task.listId && removeFromBacklogButton(task)}
+            {task.kind === 'ongoing' && !task.listId && (
               <button
                 type="button"
                 className="icon-btn"
@@ -349,6 +358,7 @@ export function PlanningBoard() {
           </div>
         </div>
         <div className="row wrap">
+          {fromListChip(task)}
           {tagChips(task)}
           {task.kind === 'ongoing' && (
             <span className="list-row-meta">
@@ -389,6 +399,140 @@ export function PlanningBoard() {
     )
   }
 
+  function fromListChip(task: TaskDef) {
+    const list = task.listId ? listById.get(task.listId) : undefined
+    if (!list) return null
+    return (
+      <Link to={`/lists/${list.id}`} className="chip chip-list" title={`From your ${list.name} list`}>
+        ▤ {list.name}
+      </Link>
+    )
+  }
+
+  function removeFromBacklogButton(task: TaskDef) {
+    return (
+      <button
+        type="button"
+        className="icon-btn"
+        aria-label={`Take ${task.label} out of the backlog`}
+        title="Take out of the backlog — it stays on its list"
+        onClick={() => run({ operation: 'taskDef.update', payload: { id: task.id, inBacklog: false } })}
+      >
+        ×
+      </button>
+    )
+  }
+
+  function editingCard(task: TaskDef) {
+    return (
+      <div key={task.id} className="card card-tight">
+        <TaskEditor task={task} onDone={() => setEditingTaskId(null)} />
+      </div>
+    )
+  }
+
+  /** Active habits: one line each, with how this period is going. */
+  function habitStrip() {
+    if (partition.habits.length === 0) return null
+    return (
+      <div className="backlog-special special-habits">
+        <div className="backlog-group">
+          <span className="dot dot-amber" />
+          <Link to="/habits">Habits</Link>
+          <span className="panel-count">({partition.habits.length})</span>
+        </div>
+        {partition.habits.map((habit) =>
+          editingTaskId === habit.id ? (
+            editingCard(habit)
+          ) : (
+            <div
+              key={habit.id}
+              draggable
+              onDragStart={(e) => startDrag(e, { taskDefId: habit.id, sourceBucketId: null })}
+              onContextMenu={openMenu(habit)}
+              className="habit-row card-draggable"
+            >
+              <span className="habit-row-label" title={habit.label}>
+                {habit.label}
+              </span>
+              <HabitMeter progress={habitProgress(habit, sessions, now)} />
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label={`Edit ${habit.label}`}
+                title="Edit"
+                onClick={() => setEditingTaskId(habit.id)}
+              >
+                ✎
+              </button>
+              {targetPicker(habit)}
+            </div>
+          ),
+        )}
+      </div>
+    )
+  }
+
+  /** What you're in the middle of on each list — bookmark-style cards. */
+  function ongoingStrips() {
+    return partition.ongoing.map(({ list, tasks }) => (
+      <div key={list.id} className="backlog-special special-list">
+        <div className="backlog-group">
+          <span className="dot dot-violet" />
+          <Link to={`/lists/${list.id}`}>{list.name}</Link>
+          <span className="muted">· ongoing</span>
+          <span className="panel-count">({tasks.length})</span>
+        </div>
+        {tasks.map((task) => {
+          if (editingTaskId === task.id) return editingCard(task)
+          const weeks = staleWeeks(task, activity.get(task.id), now)
+          return (
+            <div
+              key={task.id}
+              draggable
+              onDragStart={(e) => startDrag(e, { taskDefId: task.id, sourceBucketId: null })}
+              onContextMenu={openMenu(task)}
+              className="bookmark-card card-draggable"
+            >
+              <div className="row row-between">
+                <span className="strong">{task.label}</span>
+                <div className="row">
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label={`Mark ${task.label} done`}
+                    title="Done — it stays on the list under Done"
+                    onClick={() => run({ operation: 'taskDef.setStatus', payload: { id: task.id, status: 'done' } })}
+                  >
+                    ✓
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label={`Edit ${task.label}`}
+                    title="Edit"
+                    onClick={() => setEditingTaskId(task.id)}
+                  >
+                    ✎
+                  </button>
+                </div>
+              </div>
+              <div className="row wrap small">
+                {task.statusAt && <span className="list-row-meta">since {shortDate(task.statusAt.slice(0, 10))}</span>}
+                {weeks !== null && <StaleNudge task={task} weeks={weeks} />}
+                {(activity.get(task.id)?.sessions ?? 0) > 0 && (
+                  <span className="list-row-meta">×{activity.get(task.id)!.sessions}</span>
+                )}
+              </div>
+              <MediaStrip taskDefId={task.id} />
+              {targetPicker(task)}
+            </div>
+          )
+        })}
+      </div>
+    ))
+  }
+
   function activityMeta(task: TaskDef) {
     const a = activity.get(task.id)
     if (!a || a.sessions === 0) return <span className="list-row-meta">never done</span>
@@ -421,6 +565,7 @@ export function PlanningBoard() {
         </button>
         <ChildMeter done={progress.done} total={progress.total} />
         {a && a.sessions > 0 && <span className="backlog-line-meta">×{a.sessions}</span>}
+        {task.listId && <span className="backlog-line-meta" title={listById.get(task.listId)?.name}>▤</span>}
         <button
           type="button"
           className="icon-btn"
@@ -593,7 +738,7 @@ export function PlanningBoard() {
         <Panel
           title="Backlog"
           icon="☰"
-          count={rootTasks.length}
+          count={partition.main.length}
           description="Everything you might do. Drag a card onto a routine, a planning session, or what's running."
           onDragOver={allowDrop}
           onDrop={handleDropOnBacklog}
@@ -630,6 +775,8 @@ export function PlanningBoard() {
             )}
           </EnterForm>
 
+          {habitStrip()}
+          {ongoingStrips()}
           <div className="backlog-toolbar" role="toolbar" aria-label="Backlog view">
             <button
               type="button"
@@ -661,7 +808,7 @@ export function PlanningBoard() {
             </button>
           </div>
           <div className={view.compact ? 'backlog-list is-compact mt-xs' : 'stack stack-sm mt-xs'}>
-            {taskDefs.length === 0 && <p className="empty-hint">Nothing in the backlog yet.</p>}
+            {partition.main.length === 0 && <p className="empty-hint">Nothing in the backlog yet.</p>}
             {sections.map((section) => (
               <Fragment key={section.id ?? 'untagged'}>
                 {view.group !== 'none' && (

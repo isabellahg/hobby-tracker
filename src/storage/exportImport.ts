@@ -1,9 +1,11 @@
 import { ALL_TABLE_NAMES, db, type TableName } from './db'
+import { metaRepo } from './repositories/metaRepo'
 
 export interface ExportedData {
   version: 1
   exportedAt: string
-  data: Record<TableName, unknown[]>
+  /** Older backups predate some tables; a missing one imports as empty. */
+  data: Partial<Record<TableName, unknown[]>>
 }
 
 export async function exportAllData(): Promise<ExportedData> {
@@ -66,7 +68,15 @@ export async function computeImportDiff(incoming: ExportedData): Promise<TableDi
 
 export type ImportMode = 'merge' | 'replace'
 
-export async function applyImport(incoming: ExportedData, mode: ImportMode): Promise<void> {
+/**
+ * `changedAt` stamps this device's data as changed at that moment (default:
+ * now). Sync passes the sending device's stamp so both sides then agree.
+ */
+export async function applyImport(
+  incoming: ExportedData,
+  mode: ImportMode,
+  changedAt: string = new Date().toISOString(),
+): Promise<void> {
   await db.transaction('rw', db.tables, async () => {
     for (const name of ALL_TABLE_NAMES) {
       const incomingRows = incoming.data[name] ?? []
@@ -76,5 +86,6 @@ export async function applyImport(incoming: ExportedData, mode: ImportMode): Pro
       }
       if (incomingRows.length > 0) await table.bulkPut(incomingRows)
     }
+    await metaRepo.setLastChangedAt(changedAt)
   })
 }

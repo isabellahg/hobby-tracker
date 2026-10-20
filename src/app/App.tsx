@@ -14,6 +14,8 @@ import { ProgressScreen } from '../features/progress/ProgressScreen'
 import { DataManagementScreen } from '../features/dataManagement/DataManagementScreen'
 import { ImportScreen } from '../features/importLLM/ImportScreen'
 import { SettingsScreen } from '../features/settings/SettingsScreen'
+import { ListRoute, ListScreen } from '../features/lists/ListScreen'
+import { SyncScreen } from '../features/sync/SyncScreen'
 
 function App() {
   const loaded = useAppStore((s) => s.loaded)
@@ -48,6 +50,9 @@ function App() {
           <Route path="/data" element={<DataManagementScreen />} />
           <Route path="/import" element={<ImportScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />
+          <Route path="/habits" element={<ListScreen habits />} />
+          <Route path="/lists/:id" element={<ListRoute />} />
+          <Route path="/sync" element={<SyncScreen />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

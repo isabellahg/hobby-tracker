@@ -1,8 +1,11 @@
 import { newId } from '../../types/common'
-import type { TaskDef } from '../../types/taskDef'
+import type { ItemStatus, TaskDef } from '../../types/taskDef'
 import type { PersonalRecord } from '../../types/record'
 import { toISODate } from '../../logic/weekUtils'
 import { descendantsOf, wouldCreateCycle } from '../../logic/taskTree'
+import { DEFAULT_HABIT, normalizeFrequency } from '../../logic/habits'
+import { statusLabel } from '../../logic/listItems'
+import { requireList } from './listOps'
 import { recordRepo, taskDefRepo } from '../../../storage/repositories'
 import type { ChangedRecord } from '../envelope'
 import type { OperationContext } from '../context'
@@ -10,13 +13,15 @@ import type {
   taskDefArchiveSchema,
   taskDefCreateSchema,
   taskDefFinishSchema,
+  taskDefMoveToSchema,
+  taskDefSetStatusSchema,
   taskDefUpdateSchema,
 } from '../validate/taskDef'
 import type { z } from 'zod'
 
 const KIND_LABEL: Record<TaskDef['kind'], string> = {
   once: 'one-off',
-  recurring: 'recurring',
+  recurring: 'habit',
   ongoing: 'ongoing',
 }
 
@@ -25,6 +30,29 @@ async function requireOpenParent(parentId: string): Promise<TaskDef> {
   if (!parent) throw new Error(`Parent task ${parentId} not found`)
   if (parent.archived) throw new Error(`"${parent.label}" is archived; restore it before adding subtasks`)
   return parent
+}
+
+/** A habit always carries a status and a frequency, so it can be rated. */
+function withHabitDefaults(task: TaskDef, now: string): TaskDef {
+  if (task.kind !== 'recurring') return task
+  return {
+    ...task,
+    status: task.status ?? 'ongoing',
+    statusAt: task.statusAt ?? now,
+    habit: normalizeFrequency(task.habit ?? DEFAULT_HABIT),
+  }
+}
+
+function milestoneFor(task: TaskDef, date: string, now: string): PersonalRecord {
+  return {
+    id: newId(),
+    hobbyId: task.hobbyIds[0],
+    skillId: task.skillIds[0],
+    date,
+    description: `Finished "${task.label}"`,
+    taskDefId: task.id,
+    createdAt: now,
+  }
 }
 
 function subtaskSuffix(count: number): string {
@@ -53,7 +81,8 @@ export async function handleTaskDefCreate(
 ): Promise<{ changes: ChangedRecord[]; summary: string }> {
   const now = ctx.now.toISOString()
   const parent = payload.parentId ? await requireOpenParent(payload.parentId) : undefined
-  const taskDef: TaskDef = {
+  if (payload.listId) await requireList(payload.listId)
+  const taskDef: TaskDef = withHabitDefaults({
     id: newId(),
     label: payload.label,
     description: payload.description,
@@ -63,10 +92,15 @@ export async function handleTaskDefCreate(
     parentId: parent?.id,
     nextAction: payload.nextAction,
     defaultEstimateMin: payload.defaultEstimateMin,
+    listId: payload.listId,
+    status: payload.status ?? (payload.listId ? 'want' : undefined),
+    statusAt: payload.status || payload.listId ? now : undefined,
+    inBacklog: payload.inBacklog,
+    habit: payload.habit,
     archived: false,
     createdAt: now,
     updatedAt: now,
-  }
+  }, now)
   await taskDefRepo.put(taskDef)
   return {
     changes: [{ store: 'taskDefs', id: taskDef.id, changeType: 'created', after: taskDef }],
@@ -91,7 +125,9 @@ export async function handleTaskDefUpdate(
     }
     parentId = payload.parentId
   }
-  const updated: TaskDef = {
+  const now = ctx.now.toISOString()
+  const statusChanged = payload.status !== undefined && payload.status !== existing.status
+  const updated: TaskDef = withHabitDefaults({
     ...existing,
     parentId,
     label: payload.label ?? existing.label,
@@ -101,8 +137,12 @@ export async function handleTaskDefUpdate(
     kind: payload.kind ?? existing.kind,
     nextAction: payload.nextAction ?? existing.nextAction,
     defaultEstimateMin: payload.defaultEstimateMin ?? existing.defaultEstimateMin,
-    updatedAt: ctx.now.toISOString(),
-  }
+    status: payload.status ?? existing.status,
+    statusAt: statusChanged ? now : existing.statusAt,
+    inBacklog: payload.inBacklog ?? existing.inBacklog,
+    habit: payload.habit ? normalizeFrequency(payload.habit) : existing.habit,
+    updatedAt: now,
+  }, now)
   await taskDefRepo.put(updated)
   return {
     changes: [{ store: 'taskDefs', id: updated.id, changeType: 'updated', before: existing, after: updated }],
@@ -139,19 +179,92 @@ export async function handleTaskDefFinish(
   if (existing.archived) throw new Error(`"${existing.label}" is already finished or archived`)
 
   const now = ctx.now.toISOString()
-  const record: PersonalRecord = {
-    id: newId(),
-    hobbyId: existing.hobbyIds[0],
-    skillId: existing.skillIds[0],
-    date: payload.date ?? toISODate(ctx.now),
-    description: `Finished "${existing.label}"`,
-    taskDefId: existing.id,
-    createdAt: now,
-  }
+  const record = milestoneFor(existing, payload.date ?? toISODate(ctx.now), now)
   const taskChanges = await archiveTaskTree(existing, ctx.now)
   await recordRepo.put(record)
   return {
     changes: [...taskChanges, { store: 'personalRecords', id: record.id, changeType: 'created', after: record }],
     summary: `Finish "${existing.label}" and record it as a milestone`,
+  }
+}
+
+/**
+ * Moves a list item or habit between states. Marking a list item done records
+ * a milestone, but it stays on its list (under Done) — lists are a history too.
+ */
+export async function handleTaskDefSetStatus(
+  payload: z.infer<typeof taskDefSetStatusSchema>,
+  ctx: OperationContext,
+): Promise<{ changes: ChangedRecord[]; summary: string }> {
+  const existing = await taskDefRepo.getById(payload.id)
+  if (!existing) throw new Error(`Task ${payload.id} not found`)
+  const habit = existing.kind === 'recurring'
+  if (!habit && !existing.listId) throw new Error(`"${existing.label}" is not on a list or a habit`)
+  if (habit && payload.status === 'done') throw new Error('Habits are never done — pause or abandon them instead')
+  const status: ItemStatus = payload.status
+  if (existing.status === status) {
+    return { changes: [], summary: `"${existing.label}" is already ${statusLabel(status, habit)}` }
+  }
+
+  const now = ctx.now.toISOString()
+  const updated: TaskDef = { ...existing, status, statusAt: now, updatedAt: now }
+  await taskDefRepo.put(updated)
+  const changes: ChangedRecord[] = [
+    { store: 'taskDefs', id: updated.id, changeType: 'updated', before: existing, after: updated },
+  ]
+  if (status === 'done') {
+    const record = milestoneFor(existing, toISODate(ctx.now), now)
+    await recordRepo.put(record)
+    changes.push({ store: 'personalRecords', id: record.id, changeType: 'created', after: record })
+  }
+  return { changes, summary: `Mark "${existing.label}" ${statusLabel(status, habit)}` }
+}
+
+/** Converts a task into a habit, onto a list, or back to a plain backlog task. */
+export async function handleTaskDefMoveTo(
+  payload: z.infer<typeof taskDefMoveToSchema>,
+  ctx: OperationContext,
+): Promise<{ changes: ChangedRecord[]; summary: string }> {
+  const existing = await taskDefRepo.getById(payload.id)
+  if (!existing) throw new Error(`Task ${payload.id} not found`)
+  const now = ctx.now.toISOString()
+  const plainKind = existing.kind === 'recurring' ? 'once' : existing.kind
+  let updated: TaskDef
+  let where: string
+  if (payload.target === 'backlog') {
+    updated = {
+      ...existing,
+      kind: plainKind,
+      listId: undefined,
+      status: undefined,
+      statusAt: undefined,
+      inBacklog: undefined,
+      habit: undefined,
+    }
+    where = 'the backlog'
+  } else if (payload.target === 'habits') {
+    updated = withHabitDefaults(
+      { ...existing, kind: 'recurring', listId: undefined, inBacklog: undefined, status: 'ongoing', statusAt: now },
+      now,
+    )
+    where = 'Habits'
+  } else {
+    const list = await requireList(payload.target)
+    const same = existing.listId === list.id
+    updated = {
+      ...existing,
+      kind: plainKind,
+      listId: list.id,
+      status: same ? existing.status : 'want',
+      statusAt: same ? existing.statusAt : now,
+      habit: undefined,
+    }
+    where = `"${list.name}"`
+  }
+  updated = { ...updated, updatedAt: now }
+  await taskDefRepo.put(updated)
+  return {
+    changes: [{ store: 'taskDefs', id: updated.id, changeType: 'updated', before: existing, after: updated }],
+    summary: `Move "${existing.label}" to ${where}`,
   }
 }

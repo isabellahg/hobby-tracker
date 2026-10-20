@@ -8,6 +8,7 @@ import type { Session } from '../domain/types/session'
 import type { PersonalRecord } from '../domain/types/record'
 import type { PlanBucket } from '../domain/types/planBucket'
 import type { TaskMedia } from '../domain/types/taskMedia'
+import type { ItemList } from '../domain/types/list'
 import { nowISO } from '../domain/types/common'
 import {
   hobbyRepo,
@@ -18,6 +19,7 @@ import {
   sessionRepo,
   skillRepo,
   taskDefRepo,
+  listRepo,
   weeklyPlanRepo,
 } from '../storage/repositories'
 
@@ -32,6 +34,7 @@ export interface AppState {
   personalRecords: PersonalRecord[]
   planBuckets: PlanBucket[]
   taskMedia: TaskMedia[]
+  lists: ItemList[]
   setAll: (partial: Partial<Omit<AppState, 'loaded' | 'setAll' | 'load'>>) => void
   load: () => Promise<void>
 }
@@ -47,9 +50,10 @@ export const useAppStore = create<AppState>((set) => ({
   personalRecords: [],
   planBuckets: [],
   taskMedia: [],
+  lists: [],
   setAll: (partial) => set(partial),
   load: async () => {
-    const [hobbies, skills, taskDefs, routines, weeklyPlan, sessions, personalRecords, planBuckets, taskMedia] =
+    const [hobbies, skills, taskDefs, routines, weeklyPlan, sessions, personalRecords, planBuckets, taskMedia, lists] =
       await Promise.all([
         hobbyRepo.getAll(),
         skillRepo.getAll(),
@@ -60,6 +64,7 @@ export const useAppStore = create<AppState>((set) => ({
         recordRepo.getAll(),
         planBucketRepo.getAll(),
         taskMediaRepo.getAll(),
+        listRepo.getAll(),
       ])
     set({
       loaded: true,
@@ -72,6 +77,7 @@ export const useAppStore = create<AppState>((set) => ({
       personalRecords,
       planBuckets,
       taskMedia,
+      lists,
     })
   },
 }))

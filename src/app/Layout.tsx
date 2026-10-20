@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAppStore } from '../state/store'
 import { computeWeekStreak } from '../domain/logic/weekStreak'
 import { Toaster } from '../components/Toaster'
+import type { ItemList } from '../domain/types/list'
 
 interface NavItem {
   to: string
@@ -36,6 +37,7 @@ const NAV_GROUPS: { name: string; items: NavItem[] }[] = [
   {
     name: 'system',
     items: [
+      { to: '/sync', label: 'Sync' },
       { to: '/data', label: 'Data' },
       { to: '/import', label: 'LLM Import' },
       { to: '/settings', label: 'Settings' },
@@ -43,8 +45,22 @@ const NAV_GROUPS: { name: string; items: NavItem[] }[] = [
   },
 ]
 
-function breadcrumb(pathname: string): string[] {
+/** Habits, then your own lists by name. Lists are made and renamed in Settings. */
+function listsGroup(lists: ItemList[]): { name: string; items: NavItem[] } {
+  const open = lists.filter((l) => !l.archived).sort((a, b) => a.order - b.order)
+  return {
+    name: 'lists',
+    items: [{ to: '/habits', label: 'Habits' }, ...open.map((l) => ({ to: `/lists/${l.id}`, label: l.name }))],
+  }
+}
+
+function breadcrumb(pathname: string, lists: ItemList[]): string[] {
   if (pathname.startsWith('/session/')) return ['session', 'Session']
+  if (pathname === '/habits') return ['lists', 'Habits']
+  if (pathname.startsWith('/lists/')) {
+    const list = lists.find((l) => `/lists/${l.id}` === pathname)
+    return ['lists', list?.name ?? 'List']
+  }
   if (pathname.startsWith('/routines/')) return ['plan', 'Routines', pathname.endsWith('/new') ? 'New' : 'Edit']
   for (const group of NAV_GROUPS) {
     const item = group.items.find((i) => i.to === pathname)
@@ -81,7 +97,9 @@ function StatusBar() {
 
 export function Layout() {
   const { pathname } = useLocation()
-  const crumbs = breadcrumb(pathname)
+  const lists = useAppStore((s) => s.lists)
+  const crumbs = breadcrumb(pathname, lists)
+  const groups = [NAV_GROUPS[0], listsGroup(lists), ...NAV_GROUPS.slice(1)]
   // Only matters on narrow screens, where the nav is a slide-out drawer.
   const [navOpen, setNavOpen] = useState(false)
 
@@ -95,7 +113,7 @@ export function Layout() {
         }}
       >
         <p className="app-nav-title">Hobby Tracker</p>
-        {NAV_GROUPS.map((group) => (
+        {groups.map((group) => (
           <details key={group.name} className="nav-group" open>
             <summary>{group.name}</summary>
             {group.items.map((item) => (

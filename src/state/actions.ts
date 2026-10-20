@@ -8,6 +8,7 @@ import type {
   OperationBatchResult,
 } from '../domain/operations/envelope'
 import { useAppStore, type AppState } from './store'
+import { metaRepo } from '../storage/repositories'
 
 type ListKey = Extract<
   keyof AppState,
@@ -19,6 +20,7 @@ type ListKey = Extract<
   | 'personalRecords'
   | 'planBuckets'
   | 'taskMedia'
+  | 'lists'
 >
 
 const STORE_TO_LIST_KEY: Record<string, ListKey> = {
@@ -30,6 +32,7 @@ const STORE_TO_LIST_KEY: Record<string, ListKey> = {
   personalRecords: 'personalRecords',
   planBuckets: 'planBuckets',
   taskMedia: 'taskMedia',
+  lists: 'lists',
 }
 
 function upsert<T extends { id: string }>(list: T[], item: T): T[] {
@@ -81,12 +84,20 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
   return next
 }
 
+/** Remembers that this device's data just changed, so sync knows which side is newer. */
+async function stampChange(changes: ChangedRecord[]): Promise<void> {
+  if (changes.length > 0) await metaRepo.setLastChangedAt(new Date().toISOString())
+}
+
 /** The single entry point for every mutation — used identically by UI components and the LLM Import screen. */
 export function run(req: OperationRequest, ctxOverrides: Partial<OperationContext> = {}): Promise<OperationResult> {
   return enqueue(async () => {
     const ctx = makeContext(ctxOverrides)
     const result = await applyOperation(req, ctx)
-    if (result.success && !ctx.dryRun) applyChangesToStore(result.changes)
+    if (result.success && !ctx.dryRun) {
+      applyChangesToStore(result.changes)
+      await stampChange(result.changes)
+    }
     return result
   })
 }
@@ -100,6 +111,7 @@ export function runBatch(
     const result = await applyBatch(batch, ctx)
     if (!ctx.dryRun) {
       for (const r of result.results) if (r.success) applyChangesToStore(r.changes)
+      await stampChange(result.results.flatMap((r) => (r.success ? r.changes : [])))
     }
     return result
   })
